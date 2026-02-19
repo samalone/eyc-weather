@@ -7,7 +7,7 @@ import {
   STATION_PROVIDENCE,
 } from './src/noaa.js';
 import { StationCache } from './src/cache.js';
-import { getConditions } from './src/nws.js';
+import { getConditions, getForecast } from './src/nws.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -91,6 +91,17 @@ app.get('/api/conditions', async (_req, res) => {
   } catch (err) {
     console.error('[api] /api/conditions error:', err);
     res.status(502).json({ error: 'Failed to fetch conditions' });
+  }
+});
+
+/** 5-day forecast from NWS. */
+app.get('/api/forecast', async (_req, res) => {
+  try {
+    const forecast = await getForecast();
+    res.json({ forecast });
+  } catch (err) {
+    console.error('[api] /api/forecast error:', err);
+    res.status(502).json({ error: 'Failed to fetch forecast' });
   }
 });
 

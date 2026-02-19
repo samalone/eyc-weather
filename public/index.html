@@ -216,6 +216,44 @@ header p {
   text-align: center;
 }
 
+/* ── Forecast card ────────────────────────────────────────────────────── */
+.forecast-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.forecast-table td {
+  padding: 0.45rem 0.375rem;
+  vertical-align: middle;
+}
+
+.forecast-table .fc-day {
+  font-weight: 600;
+  font-size: 1.275rem;
+  text-transform: uppercase;
+  color: var(--color-text);
+  text-align: left;
+}
+
+.forecast-table .fc-icon {
+  font-size: 1.95rem;
+  text-align: center;
+  width: 3.75rem;
+}
+
+.forecast-table .fc-high {
+  font-weight: 600;
+  font-size: 1.35rem;
+  color: var(--color-text);
+  text-align: right;
+}
+
+.forecast-table .fc-low {
+  font-size: 1.275rem;
+  color: var(--color-text-dim);
+  text-align: right;
+}
+
 /* ── Duotone icon colors (light mode) ─────────────────────────────────── */
 .icon-sun              { --fa-primary-color: oklch(0.78 0.17 70);  --fa-secondary-color: oklch(0.85 0.14 80);  --fa-secondary-opacity: 0.7; }
 .icon-moon             { --fa-primary-color: oklch(0.72 0.08 250); --fa-secondary-color: oklch(0.80 0.06 260); --fa-secondary-opacity: 0.6; }
@@ -292,6 +330,14 @@ header p {
     <h2>Current Conditions</h2>
     <div id="conditions-content">
       <p class="status-msg">Loading conditions&hellip;</p>
+    </div>
+  </div>
+
+  <!-- 5-Day Forecast card -->
+  <div class="card" id="forecast-card">
+    <h2>5-Day Forecast</h2>
+    <div id="forecast-container">
+      <p class="status-msg">Loading forecast&hellip;</p>
     </div>
   </div>
 
@@ -440,7 +486,7 @@ function buildClockSVG() {
     const angle = i * 30;
     const isCardinal = (i === 0 || i === 6);   // HIGH / LOW positions
     const isQuarter = (i === 3 || i === 9);     // 3-hour marks
-    const inner = (isCardinal || isQuarter) ? tickInnerMajor : tickInnerMinor;
+    const inner = tickInnerMinor;
     const width = isCardinal ? '2.5' : isQuarter ? '2' : '1.2';
     const p1 = polar(angle, tickOuterR);
     const p2 = polar(angle, inner);
@@ -461,9 +507,9 @@ function buildClockSVG() {
     fill: 'var(--color-text)',
   };
 
-  // HIGH at top (between ticks and arc band, clear of hand)
+  // HIGH at top (same ring as hour numbers)
   const highLabel = el('text', {
-    x: cx, y: cy - hiloLabelR,
+    x: cx, y: cy - numberR,
     ...textStyle,
     'font-size': '10',
     'font-weight': '700',
@@ -472,9 +518,9 @@ function buildClockSVG() {
   highLabel.textContent = 'HIGH';
   svg.appendChild(highLabel);
 
-  // LOW at bottom
+  // LOW at bottom (same ring as hour numbers)
   const lowLabel = el('text', {
-    x: cx, y: cy + hiloLabelR,
+    x: cx, y: cy + numberR,
     ...textStyle,
     'font-size': '10',
     'font-weight': '700',
@@ -882,6 +928,42 @@ async function refreshConditions() {
   }
 }
 
+// ── 5-Day Forecast ──────────────────────────────────────────────────────
+
+/** Map a condition code to a CSS color class (strip 'fa-' prefix). */
+function iconColorClass(iconName) {
+  return 'icon-' + iconName.replace('fa-', '');
+}
+
+async function refreshForecast() {
+  try {
+    const res = await fetch('/api/forecast');
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const { forecast } = await res.json();
+
+    const container = document.getElementById('forecast-container');
+    if (!container) return;
+
+    // Build a table: one row per day — columns: day, icon, high, low
+    const rows = forecast.map(d => {
+      const iconName = conditionToIcon(d.condition, 'day');
+      const cls = iconColorClass(iconName);
+      const high = d.high != null ? `${Math.round(d.high)}°` : '\u2014';
+      const low = d.low != null ? `${Math.round(d.low)}°` : '\u2014';
+      return `<tr>
+        <td class="fc-day">${d.dayName}</td>
+        <td class="fc-icon ${cls}"><i class="fa-sharp-duotone fa-solid ${iconName}"></i></td>
+        <td class="fc-high">${high}</td>
+        <td class="fc-low">${low}</td>
+      </tr>`;
+    }).join('');
+
+    container.innerHTML = `<table class="forecast-table">${rows}</table>`;
+  } catch (err) {
+    console.warn('Forecast refresh failed:', err);
+  }
+}
+
 // ── Wind Compass ────────────────────────────────────────────────────────
 
 /** Wind source definitions.  Each gets its own hue on the compass. */
@@ -1182,6 +1264,10 @@ async function init() {
   // ── Current conditions ──────────────────────────────────────────────
   await refreshConditions();
   setInterval(refreshConditions, 60_000);
+
+  // ── 5-day forecast ────────────────────────────────────────────────
+  await refreshForecast();
+  setInterval(refreshForecast, 30 * 60_000);
 
   // ── Wind compass ────────────────────────────────────────────────────
   await refreshWind();
