@@ -1,19 +1,15 @@
 /**
- * Rolling time-series cache for NOAA observation data.
+ * Lazy TTL cache for NOAA observation data.
  *
  * Each StationCache manages one NOAA station and one or more data products
- * (e.g. wind, visibility, water_level).  On init it pre-fills the past
- * hour of data; once started it incrementally appends new observations and
- * trims anything older than the retention window.
+ * (e.g. wind, visibility, water_level).  Data is fetched on demand when a
+ * caller requests it and the cache is empty or stale.  No background polling.
  */
 
 import { fetchNoaa } from './noaa.js';
 
-/** Default retention window: 1 hour. */
-const DEFAULT_WINDOW_MS = 60 * 60 * 1000;
-
-/** Default refresh interval: 60 seconds. */
-const DEFAULT_REFRESH_MS = 60 * 1000;
+/** Default TTL: 6 minutes (matches NOAA's observation update cadence). */
+const DEFAULT_TTL_MS = 6 * 60 * 1000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -51,205 +47,93 @@ export class StationCache {
   /** @type {Map<string, object[]>} product → sorted observations */
   #data = new Map();
 
-  /** @type {number} retention window in ms */
-  #windowMs;
+  /** @type {Map<string, number>} product → Date.now() when last fetched */
+  #fetchedAt = new Map();
 
-  /** @type {number} refresh interval in ms */
-  #refreshMs;
+  /** @type {number} cache TTL in ms */
+  #ttlMs;
 
-  /** @type {ReturnType<typeof setInterval> | null} */
-  #intervalId = null;
+  /** @type {string} NOAA `range` param (hours of history to fetch) */
+  #windowHours;
 
-  /** @type {Record<string, string>} extra params per product (e.g. datum) */
+  /** @type {Record<string, Record<string, string>>} extra params per product */
   #productParams;
-
-  /** @type {string} NOAA `range` param for initial fill (hours) */
-  #fillRange;
 
   /**
    * @param {string}   stationId       NOAA station ID
    * @param {string[]} products        Product names (e.g. ['wind', 'visibility'])
    * @param {object}   [options]
-   * @param {number}   [options.windowMs]   Retention window (default 1 hr)
-   * @param {number}   [options.refreshMs]  Refresh interval (default 60 s)
-   * @param {string}   [options.fillRange]  Hours of history to fetch on init (default '1')
+   * @param {string}   [options.windowHours]  Hours of history to fetch (default '1')
+   * @param {number}   [options.ttlMs]        How long data is fresh (default 60 s)
    * @param {Record<string, Record<string, string>>} [options.productParams]
    *   Per-product extra query params, e.g. { water_level: { datum: 'MLLW' } }
    */
   constructor(stationId, products, options = {}) {
     this.#stationId = stationId;
     this.#products = products;
-    this.#windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
-    this.#refreshMs = options.refreshMs ?? DEFAULT_REFRESH_MS;
-    this.#fillRange = options.fillRange ?? '1';
+    this.#ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
+    this.#windowHours = options.windowHours ?? '1';
     this.#productParams = options.productParams ?? {};
 
     for (const p of products) {
       this.#data.set(p, []);
-    }
-  }
-
-  // ── Lifecycle ───────────────────────────────────────────────────────────
-
-  /**
-   * Pre-fill the cache with the past hour of observations for every product.
-   * Call this once before `start()`.
-   */
-  async init() {
-    console.log(`[cache] Initializing station ${this.#stationId}: ${this.#products.join(', ')}`);
-
-    const results = await Promise.allSettled(
-      this.#products.map((product) => this.#fillProduct(product)),
-    );
-
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (r.status === 'rejected') {
-        console.error(
-          `[cache] Failed to init ${this.#stationId}/${this.#products[i]}:`,
-          r.reason?.message ?? r.reason,
-        );
-      }
-    }
-  }
-
-  /**
-   * Start the periodic refresh loop.  Calls `refresh()` every `refreshMs`.
-   */
-  start() {
-    if (this.#intervalId) return;
-    this.#intervalId = setInterval(() => this.refresh(), this.#refreshMs);
-    console.log(
-      `[cache] Station ${this.#stationId} refresh started (every ${this.#refreshMs / 1000}s)`,
-    );
-  }
-
-  /**
-   * Stop the periodic refresh loop.
-   */
-  stop() {
-    if (this.#intervalId) {
-      clearInterval(this.#intervalId);
-      this.#intervalId = null;
+      this.#fetchedAt.set(p, 0);
     }
   }
 
   // ── Data access ─────────────────────────────────────────────────────────
 
   /**
-   * Return the cached observations for a product, sorted by time ascending.
+   * Return observations for a product, sorted by time ascending.
+   * Fetches from NOAA if the cache is empty or stale.
    *
    * @param {string} product
-   * @returns {object[]}  Shallow copy of the observations array.
+   * @returns {Promise<object[]>}  Shallow copy of the observations array.
    */
-  getData(product) {
-    const arr = this.#data.get(product);
-    if (!arr) {
+  async getData(product) {
+    if (!this.#data.has(product)) {
       throw new Error(`Unknown product "${product}" for station ${this.#stationId}`);
     }
-    return [...arr];
+
+    const now = Date.now();
+    const lastFetch = this.#fetchedAt.get(product);
+
+    if (!lastFetch || (now - lastFetch) >= this.#ttlMs) {
+      await this.#fetchProduct(product);
+    }
+
+    return [...this.#data.get(product)];
   }
 
-  // ── Internal: fill & refresh ────────────────────────────────────────────
+  // ── Internal ────────────────────────────────────────────────────────────
 
   /**
-   * Fetch the initial history of a product and store it.
-   * The range (in hours) is controlled by the `fillRange` constructor option.
+   * Fetch the full observation window for a product from NOAA and replace
+   * the cached data.
    */
-  async #fillProduct(product) {
+  async #fetchProduct(product) {
     const extra = this.#productParams[product] ?? {};
+
+    console.log(`[cache] Fetching ${this.#stationId}/${product} (range=${this.#windowHours}h)`);
+
     const json = await fetchNoaa({
       station: this.#stationId,
       product,
-      range: this.#fillRange,
+      range: this.#windowHours,
       ...extra,
     });
 
     if (!json?.data?.length) {
       console.warn(`[cache] No data returned for ${this.#stationId}/${product}`);
+      // Still mark as fetched so we don't hammer NOAA on repeated empty responses
+      this.#fetchedAt.set(product, Date.now());
       return;
     }
 
     const obs = parseObservations(json.data);
     this.#data.set(product, obs);
-    console.log(
-      `[cache] Filled ${this.#stationId}/${product}: ${obs.length} observations`,
-    );
-  }
+    this.#fetchedAt.set(product, Date.now());
 
-  /**
-   * Fetch the latest observation for every product, append any new ones,
-   * and trim entries older than the retention window.
-   */
-  async refresh() {
-    const results = await Promise.allSettled(
-      this.#products.map((product) => this.#refreshProduct(product)),
-    );
-
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (r.status === 'rejected') {
-        console.warn(
-          `[cache] Refresh failed for ${this.#stationId}/${this.#products[i]}:`,
-          r.reason?.message ?? r.reason,
-        );
-      }
-    }
-  }
-
-  /**
-   * Fetch `date=latest` for a single product, append if new, then trim.
-   */
-  async #refreshProduct(product) {
-    const extra = this.#productParams[product] ?? {};
-    const json = await fetchNoaa({
-      station: this.#stationId,
-      product,
-      date: 'latest',
-      ...extra,
-    });
-
-    if (!json?.data?.length) return;
-
-    const [newest] = parseObservations(json.data);
-    const arr = this.#data.get(product);
-
-    // Only append if it's genuinely newer than the last cached point.
-    // Using > (not !==) so that stale or reprocessed data from NOAA
-    // doesn't get appended out of chronological order.
-    const lastTime = arr.length ? arr[arr.length - 1].time : null;
-    if (!lastTime || newest.time > lastTime) {
-      arr.push(newest);
-    }
-
-    // Trim observations older than the retention window
-    this.#trim(product);
-  }
-
-  /**
-   * Remove observations whose timestamp falls outside the retention window.
-   *
-   * NOAA timestamps are US-Eastern local time (lst_ldt), e.g. "2026-02-19T14:30".
-   * The server may run in UTC (Docker), so we can't compare NOAA time strings
-   * against `Date.now()`.  Instead, trim relative to the newest observation —
-   * drop anything more than `#windowMs` older than the most recent point.
-   */
-  #trim(product) {
-    const arr = this.#data.get(product);
-    if (arr.length === 0) return;
-
-    // Use the newest observation as the reference point, not the system clock.
-    const newestMs = new Date(arr[arr.length - 1].time).getTime();
-    const cutoffMs = newestMs - this.#windowMs;
-
-    // Observations are sorted chronologically; find the first index to keep
-    let firstKeep = 0;
-    while (firstKeep < arr.length && new Date(arr[firstKeep].time).getTime() < cutoffMs) {
-      firstKeep++;
-    }
-
-    if (firstKeep > 0) {
-      arr.splice(0, firstKeep);
-    }
+    console.log(`[cache] Cached ${this.#stationId}/${product}: ${obs.length} observations`);
   }
 }

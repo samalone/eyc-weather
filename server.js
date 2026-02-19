@@ -19,7 +19,7 @@ const BASE_PATH = '/eyc-weather';
 const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
 const VERSION = pkg.version;
 
-// ── Observation caches ──────────────────────────────────────────────────────
+// ── Observation caches (lazy — fetch on first request, not on startup) ──────
 
 const stationCaches = new Map();
 
@@ -35,20 +35,11 @@ const provVisCacher = new StationCache(STATION_PROVIDENCE_VIS, [
 /** Providence — water level observations (25h window for tide graph) */
 const provCacher = new StationCache(STATION_PROVIDENCE, ['water_level'], {
   productParams: { water_level: { datum: 'MLLW' } },
-  windowMs: 25 * 60 * 60 * 1000,
-  fillRange: '25',
+  windowHours: '25',
 });
 
 stationCaches.set(STATION_PROVIDENCE_VIS, provVisCacher);
 stationCaches.set(STATION_PROVIDENCE, provCacher);
-
-// ── Initialize caches before starting the server ────────────────────────────
-
-console.log('[server] Initializing observation caches…');
-await Promise.all([provVisCacher.init(), provCacher.init()]);
-provVisCacher.start();
-provCacher.start();
-console.log('[server] Observation caches ready.');
 
 // ── Express app ─────────────────────────────────────────────────────────────
 
@@ -90,7 +81,7 @@ app.get(bp('/api/tides'), async (_req, res) => {
 });
 
 /** Cached observations for a station + product. */
-app.get(bp('/api/observations/:station/:product'), (req, res) => {
+app.get(bp('/api/observations/:station/:product'), async (req, res) => {
   const { station, product } = req.params;
   const cacher = stationCaches.get(station);
 
@@ -99,7 +90,7 @@ app.get(bp('/api/observations/:station/:product'), (req, res) => {
   }
 
   try {
-    const data = cacher.getData(product);
+    const data = await cacher.getData(product);
     res.json({
       station,
       product,
@@ -107,7 +98,7 @@ app.get(bp('/api/observations/:station/:product'), (req, res) => {
       data,
     });
   } catch (err) {
-    res.status(404).json({ error: err.message });
+    res.status(502).json({ error: err.message });
   }
 });
 
@@ -115,7 +106,7 @@ app.get(bp('/api/observations/:station/:product'), (req, res) => {
 app.get(bp('/api/tide-curve'), async (_req, res) => {
   try {
     const curve = await getTideCurve();
-    const measured = provCacher.getData('water_level');
+    const measured = await provCacher.getData('water_level');
     res.json({ curve, measured });
   } catch (err) {
     console.error('[api] /api/tide-curve error:', err);
