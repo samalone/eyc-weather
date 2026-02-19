@@ -95,7 +95,7 @@ header p {
 /* ── Card grid ─────────────────────────────────────────────────────────── */
 .dashboard {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 400px));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 1rem;
   width: 100%;
   max-width: 900px;
@@ -121,6 +121,22 @@ header p {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-dim);
+}
+
+/* ── Wide card (spans full grid) ───────────────────────────────────────── */
+.card-wide {
+  grid-column: 1 / -1;
+}
+
+/* ── Tide graph ───────────────────────────────────────────────────────── */
+#tide-graph-container {
+  width: 100%;
+}
+
+.tide-graph-svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 /* ── Tide clock SVG ────────────────────────────────────────────────────── */
@@ -367,6 +383,14 @@ footer {
       <p class="status-msg">Loading wind data&hellip;</p>
     </div>
     <div class="wind-info" id="wind-info" hidden></div>
+  </div>
+
+  <!-- Tide Graph card -->
+  <div class="card card-wide" id="tide-graph-card">
+    <h2>Tide Graph &mdash; Providence</h2>
+    <div id="tide-graph-container">
+      <p class="status-msg">Loading tide graph&hellip;</p>
+    </div>
   </div>
 </div>
 
@@ -975,6 +999,218 @@ async function refreshForecast() {
   }
 }
 
+// ── Tide Graph ──────────────────────────────────────────────────────────
+
+/**
+ * Build an SVG tide graph showing predicted curve and measured water levels.
+ *
+ * @param {{ time: string, height: number }[]} curve      Prediction curve (~240 pts)
+ * @param {{ time: string, v: string }[]}      measured   Measured water levels
+ * @returns {SVGSVGElement}
+ */
+function buildTideGraphSVG(curve, measured) {
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // ── Layout constants ──────────────────────────────────────────────────
+  const W = 800, H = 400;
+  const ml = 45, mr = 10, mt = 25, mb = 30;   // margins
+  const plotW = W - ml - mr;
+  const plotH = H - mt - mb;
+
+  // ── Time domain: midnight to midnight (local) ─────────────────────────
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const t0 = today.getTime();
+  const t1 = t0 + 24 * 60 * 60 * 1000;
+
+  const xOf = (ms) => ml + ((ms - t0) / (t1 - t0)) * plotW;
+
+  // ── Height domain: auto-scale from prediction data ────────────────────
+  let hMin = Infinity, hMax = -Infinity;
+  for (const p of curve) {
+    if (p.height < hMin) hMin = p.height;
+    if (p.height > hMax) hMax = p.height;
+  }
+  // Pad by 0.5 ft and round to nice boundaries
+  hMin = Math.floor(hMin * 2 - 1) / 2;  // round down to nearest 0.5
+  hMax = Math.ceil(hMax * 2 + 1) / 2;   // round up to nearest 0.5
+
+  const yOf = (h) => mt + plotH - ((h - hMin) / (hMax - hMin)) * plotH;
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+  const el = (tag, attrs) => {
+    const e = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.classList.add('tide-graph-svg');
+
+  // ── Grid lines & Y-axis labels ────────────────────────────────────────
+  // Horizontal grid lines at each whole foot
+  for (let h = Math.ceil(hMin); h <= Math.floor(hMax); h++) {
+    const y = yOf(h);
+    const isZero = h === 0;
+    svg.appendChild(el('line', {
+      x1: ml, y1: y, x2: W - mr, y2: y,
+      stroke: isZero ? 'var(--color-text-dim)' : 'var(--color-border)',
+      'stroke-width': isZero ? '1' : '0.5',
+    }));
+    svg.appendChild(el('text', {
+      x: ml - 6, y: y,
+      'text-anchor': 'end',
+      'dominant-baseline': 'middle',
+      fill: 'var(--color-text-dim)',
+      'font-size': '11',
+    })).textContent = `${h}`;
+  }
+
+  // Y-axis unit label
+  const yLabel = el('text', {
+    x: 8, y: mt + plotH / 2,
+    'text-anchor': 'middle',
+    'dominant-baseline': 'middle',
+    fill: 'var(--color-text-dim)',
+    'font-size': '10',
+    transform: `rotate(-90, 8, ${mt + plotH / 2})`,
+  });
+  yLabel.textContent = 'ft MLLW';
+  svg.appendChild(yLabel);
+
+  // ── X-axis tick marks & labels (every 3 hours) ────────────────────────
+  const xLabels = [
+    '12a','3a','6a','9a','12p','3p','6p','9p',
+  ];
+  for (let i = 0; i < 8; i++) {
+    const ms = t0 + i * 3 * 60 * 60 * 1000;
+    const x = xOf(ms);
+
+    // Vertical grid line
+    svg.appendChild(el('line', {
+      x1: x, y1: mt, x2: x, y2: mt + plotH,
+      stroke: 'var(--color-border)',
+      'stroke-width': '0.5',
+    }));
+
+    // Time label
+    svg.appendChild(el('text', {
+      x, y: H - mb + 16,
+      'text-anchor': 'middle',
+      fill: 'var(--color-text-dim)',
+      'font-size': '11',
+    })).textContent = xLabels[i];
+  }
+
+  // ── Plot border ───────────────────────────────────────────────────────
+  svg.appendChild(el('rect', {
+    x: ml, y: mt, width: plotW, height: plotH,
+    fill: 'none',
+    stroke: 'var(--color-border)',
+    'stroke-width': '1',
+  }));
+
+  // ── Prediction curve ──────────────────────────────────────────────────
+  if (curve.length > 1) {
+    let d = '';
+    for (let i = 0; i < curve.length; i++) {
+      const ms = new Date(curve[i].time).getTime();
+      if (ms < t0 || ms > t1) continue;
+      const x = xOf(ms);
+      const y = yOf(curve[i].height);
+      d += (d === '' ? `M${x},${y}` : ` L${x},${y}`);
+    }
+    svg.appendChild(el('path', {
+      d,
+      fill: 'none',
+      stroke: 'var(--color-text-dim)',
+      'stroke-width': '1.5',
+      'stroke-opacity': '0.5',
+    }));
+  }
+
+  // ── High/Low labels on prediction curve ───────────────────────────────
+  // Find local peaks and troughs
+  for (let i = 1; i < curve.length - 1; i++) {
+    const prev = curve[i - 1].height;
+    const curr = curve[i].height;
+    const next = curve[i + 1].height;
+    const ms = new Date(curve[i].time).getTime();
+    if (ms < t0 || ms > t1) continue;
+
+    const isPeak = curr > prev && curr >= next;
+    const isTrough = curr < prev && curr <= next;
+    if (!isPeak && !isTrough) continue;
+
+    const x = xOf(ms);
+    const y = yOf(curr);
+    const label = el('text', {
+      x,
+      y: isPeak ? y - 6 : y + 13,
+      'text-anchor': 'middle',
+      fill: 'var(--color-text-dim)',
+      'font-size': '10',
+      'font-weight': '600',
+    });
+    label.textContent = curr.toFixed(1);
+    svg.appendChild(label);
+  }
+
+  // ── Measured water level ──────────────────────────────────────────────
+  if (measured.length > 1) {
+    let d = '';
+    for (const obs of measured) {
+      const ms = new Date(obs.time).getTime();
+      if (ms < t0 || ms > t1) continue;
+      const h = parseFloat(obs.v);
+      if (Number.isNaN(h)) continue;
+      const x = xOf(ms);
+      const y = yOf(h);
+      d += (d === '' ? `M${x},${y}` : ` L${x},${y}`);
+    }
+    if (d) {
+      svg.appendChild(el('path', {
+        d,
+        fill: 'none',
+        stroke: 'var(--color-accent)',
+        'stroke-width': '2',
+      }));
+    }
+  }
+
+  // ── Current-time marker ───────────────────────────────────────────────
+  const nowMs = Date.now();
+  if (nowMs >= t0 && nowMs <= t1) {
+    const x = xOf(nowMs);
+    svg.appendChild(el('line', {
+      x1: x, y1: mt, x2: x, y2: mt + plotH,
+      stroke: 'var(--color-accent)',
+      'stroke-width': '1',
+      'stroke-dasharray': '4,3',
+    }));
+  }
+
+  return svg;
+}
+
+/** Fetch tide curve + measured data and rebuild the graph. */
+async function refreshTideGraph() {
+  try {
+    console.log('[tide-graph] Refreshing…');
+    const res = await fetch('api/tide-curve');
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const { curve, measured } = await res.json();
+
+    console.log(`[tide-graph] ${curve.length} prediction pts, ${measured.length} measured pts`);
+    const container = document.getElementById('tide-graph-container');
+    container.innerHTML = '';
+    container.appendChild(buildTideGraphSVG(curve, measured));
+  } catch (err) {
+    console.error('[tide-graph] Refresh failed:', err);
+  }
+}
+
 // ── Wind Compass ────────────────────────────────────────────────────────
 
 /** Wind source definitions.  Each gets its own hue on the compass. */
@@ -1298,6 +1534,10 @@ async function init() {
   // ── 5-day forecast ────────────────────────────────────────────────
   await refreshForecast();
   setInterval(refreshForecast, 30 * 60_000);
+
+  // ── Tide graph ──────────────────────────────────────────────────────
+  await refreshTideGraph();
+  setInterval(refreshTideGraph, 5 * 60_000);
 
   // ── Wind compass ────────────────────────────────────────────────────
   await refreshWind();

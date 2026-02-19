@@ -55,6 +55,61 @@ export async function fetchNoaa(params) {
   return json;
 }
 
+// ── Tide prediction curve (Providence, daily cache) ────────────────────────
+
+let curveCache = {
+  /** ISO date string (YYYY-MM-DD) the cached data covers */
+  date: null,
+  /** @type {{ time: string, height: number }[]} */
+  curve: [],
+};
+
+/**
+ * Return today's full 6-minute-interval tide prediction curve for Providence.
+ * Cached per calendar day.
+ *
+ * @returns {Promise<{ time: string, height: number }[]>}
+ */
+export async function getTideCurve() {
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (curveCache.date === today && curveCache.curve.length) {
+    return curveCache.curve;
+  }
+
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  console.log(`[noaa] Fetching tide curve for ${today}`);
+
+  const json = await fetchNoaa({
+    begin_date: yyyymmdd(now),
+    end_date: yyyymmdd(tomorrow),
+    station: STATION_PROVIDENCE,
+    product: 'predictions',
+    datum: 'MLLW',
+  });
+
+  if (!json?.predictions?.length) {
+    throw new Error('NOAA response contained no tide curve predictions');
+  }
+
+  // Filter to today only (the 2-day fetch may include some of tomorrow)
+  const todayPrefix = today;
+  const curve = json.predictions
+    .filter((p) => p.t.startsWith(todayPrefix))
+    .map((p) => ({
+      time: p.t.replace(' ', 'T'),
+      height: parseFloat(p.v),
+    }));
+
+  curveCache = { date: today, curve };
+  console.log(`[noaa] Cached tide curve: ${curve.length} points for ${today}`);
+
+  return curve;
+}
+
 // ── Tide predictions (daily cache) ──────────────────────────────────────────
 
 let predictionCache = {

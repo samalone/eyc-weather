@@ -63,12 +63,16 @@ export class StationCache {
   /** @type {Record<string, string>} extra params per product (e.g. datum) */
   #productParams;
 
+  /** @type {string} NOAA `range` param for initial fill (hours) */
+  #fillRange;
+
   /**
    * @param {string}   stationId       NOAA station ID
    * @param {string[]} products        Product names (e.g. ['wind', 'visibility'])
    * @param {object}   [options]
    * @param {number}   [options.windowMs]   Retention window (default 1 hr)
    * @param {number}   [options.refreshMs]  Refresh interval (default 60 s)
+   * @param {string}   [options.fillRange]  Hours of history to fetch on init (default '1')
    * @param {Record<string, Record<string, string>>} [options.productParams]
    *   Per-product extra query params, e.g. { water_level: { datum: 'MLLW' } }
    */
@@ -77,6 +81,7 @@ export class StationCache {
     this.#products = products;
     this.#windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
     this.#refreshMs = options.refreshMs ?? DEFAULT_REFRESH_MS;
+    this.#fillRange = options.fillRange ?? '1';
     this.#productParams = options.productParams ?? {};
 
     for (const p of products) {
@@ -170,14 +175,15 @@ export class StationCache {
   // ── Internal: fill & refresh ────────────────────────────────────────────
 
   /**
-   * Fetch the past hour of a product and store it.
+   * Fetch the initial history of a product and store it.
+   * The range (in hours) is controlled by the `fillRange` constructor option.
    */
   async #fillProduct(product) {
     const extra = this.#productParams[product] ?? {};
     const json = await fetchNoaa({
       station: this.#stationId,
       product,
-      range: '1',
+      range: this.#fillRange,
       ...extra,
     });
 

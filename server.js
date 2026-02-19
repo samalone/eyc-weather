@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import {
   getTidePredictions,
+  getTideCurve,
   STATION_PROVIDENCE_VIS,
   STATION_PROVIDENCE,
 } from './src/noaa.js';
@@ -30,9 +31,11 @@ const provVisCacher = new StationCache(STATION_PROVIDENCE_VIS, [
   'humidity',
 ]);
 
-/** Providence — water level observations */
+/** Providence — water level observations (25h window for tide graph) */
 const provCacher = new StationCache(STATION_PROVIDENCE, ['water_level'], {
   productParams: { water_level: { datum: 'MLLW' } },
+  windowMs: 25 * 60 * 60 * 1000,
+  fillRange: '25',
 });
 
 stationCaches.set(STATION_PROVIDENCE_VIS, provVisCacher);
@@ -104,6 +107,18 @@ app.get(bp('/api/observations/:station/:product'), (req, res) => {
     });
   } catch (err) {
     res.status(404).json({ error: err.message });
+  }
+});
+
+/** Full-day tide prediction curve + measured water levels (Providence). */
+app.get(bp('/api/tide-curve'), async (_req, res) => {
+  try {
+    const curve = await getTideCurve();
+    const measured = provCacher.getData('water_level');
+    res.json({ curve, measured });
+  } catch (err) {
+    console.error('[api] /api/tide-curve error:', err);
+    res.status(502).json({ error: 'Failed to fetch tide curve' });
   }
 });
 
