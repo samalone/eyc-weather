@@ -57,13 +57,24 @@ The API key must be obtained from a Weather Underground account that owns a cont
 
 ## Architecture Notes
 
-- Single Express (or similar) server serves both the API and the static frontend
+- Single Express server serves both the API and the static frontend
+- All routes are mounted under `/eyc-weather` (hardcoded `BASE_PATH`)
+- Frontend uses relative URLs (no leading `/`) so they resolve correctly under the prefix
 - Backend fetches from NOAA (and eventually WU) on a schedule, caches in memory
 - Frontend is a single HTML page with inline or bundled CSS/JS
 - NOAA data needs no API key; WU data requires the env var above
 - Cache TTL ~5 min (NOAA updates roughly every 6 minutes)
 - Mobile-friendly, responsive card-based layout
 - Dark mode support via `prefers-color-scheme` and/or manual toggle
+
+## Deployment
+
+- **Container:** Docker image `llamagraphics/eyc-weather` on Docker Hub
+- **Orchestration:** Kubernetes via Kustomize (`k8s/prod/`)
+- **Cluster:** `kubectl --context pc` (Linode)
+- **Ingress:** Shares hosts with `course-server-ingress` at `/eyc-weather` path prefix
+- **Versioning:** Semver tag in `k8s/prod/kustomization.yaml`, managed by `scripts/release.sh`
+- **VS Code tasks:** Release: Patch/Minor/Major (bump, build, deploy, commit, tag, push)
 
 ## Project Conventions
 

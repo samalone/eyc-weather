@@ -1,6 +1,7 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import {
   getTidePredictions,
   STATION_PROVIDENCE_VIS,
@@ -11,6 +12,10 @@ import { getConditions, getForecast } from './src/nws.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
+const BASE_PATH = '/eyc-weather';
+
+const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
+const VERSION = pkg.version;
 
 // ── Observation caches ──────────────────────────────────────────────────────
 
@@ -45,13 +50,32 @@ console.log('[server] Observation caches ready.');
 
 const app = express();
 
+/** Prefix a route path with the BASE_PATH. */
+const bp = (path) => `${BASE_PATH}${path}`;
+
+// Redirect /eyc-weather → /eyc-weather/ so relative URLs resolve correctly
+app.use(BASE_PATH, (req, _res, next) => {
+  if (req.path === '/' && !req.originalUrl.endsWith('/')) {
+    return _res.redirect(301, `${BASE_PATH}/`);
+  }
+  next();
+});
+
 // ── Static files ────────────────────────────────────────────────────────────
-app.use(express.static(join(__dirname, 'public')));
+app.use(bp('/'), express.static(join(__dirname, 'public'), {
+  index: false,
+  redirect: false,
+}));
+
+/** Serve index.html for the root path. */
+app.get(bp('/'), (_req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'));
+});
 
 // ── API routes ──────────────────────────────────────────────────────────────
 
 /** Tide predictions (hi/lo for Pawtuxet Cove). */
-app.get('/api/tides', async (_req, res) => {
+app.get(bp('/api/tides'), async (_req, res) => {
   try {
     const predictions = await getTidePredictions();
     res.json({ predictions });
@@ -62,7 +86,7 @@ app.get('/api/tides', async (_req, res) => {
 });
 
 /** Cached observations for a station + product. */
-app.get('/api/observations/:station/:product', (req, res) => {
+app.get(bp('/api/observations/:station/:product'), (req, res) => {
   const { station, product } = req.params;
   const cacher = stationCaches.get(station);
 
@@ -84,7 +108,7 @@ app.get('/api/observations/:station/:product', (req, res) => {
 });
 
 /** Current weather conditions from NWS (KPVD). */
-app.get('/api/conditions', async (_req, res) => {
+app.get(bp('/api/conditions'), async (_req, res) => {
   try {
     const conditions = await getConditions();
     res.json(conditions);
@@ -95,7 +119,7 @@ app.get('/api/conditions', async (_req, res) => {
 });
 
 /** 5-day forecast from NWS. */
-app.get('/api/forecast', async (_req, res) => {
+app.get(bp('/api/forecast'), async (_req, res) => {
   try {
     const forecast = await getForecast();
     res.json({ forecast });
@@ -103,6 +127,11 @@ app.get('/api/forecast', async (_req, res) => {
     console.error('[api] /api/forecast error:', err);
     res.status(502).json({ error: 'Failed to fetch forecast' });
   }
+});
+
+/** App version from package.json. */
+app.get(bp('/api/version'), (_req, res) => {
+  res.json({ version: VERSION });
 });
 
 // ── Start ───────────────────────────────────────────────────────────────────

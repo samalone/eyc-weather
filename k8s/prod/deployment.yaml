@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eyc-weather
+  namespace: default
+  labels:
+    app: eyc-weather
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eyc-weather
+  template:
+    metadata:
+      labels:
+        app: eyc-weather
+    spec:
+      containers:
+        - name: eyc-weather
+          image: llamagraphics/eyc-weather:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /eyc-weather/api/conditions
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /eyc-weather/api/conditions
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"

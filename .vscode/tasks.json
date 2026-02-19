@@ -1,0 +1,68 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Docker: Build Dev Image",
+            "type": "shell",
+            "command": "docker",
+            "args": [
+                "build",
+                "-t", "llamagraphics/eyc-weather:dev",
+                "."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": [],
+            "detail": "Build the EYC Weather Docker image for local testing"
+        },
+        {
+            "label": "Docker: Build Production Image",
+            "type": "shell",
+            "command": "./scripts/build-production-image.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": [],
+            "detail": "Build and push multi-platform production image (version from kustomization.yaml)"
+        },
+        {
+            "label": "Release: Patch",
+            "type": "shell",
+            "command": "./scripts/release.sh",
+            "args": ["patch"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "none",
+            "problemMatcher": [],
+            "detail": "Bump patch version, build, deploy, commit, tag, and push (x.y.Z) — with rollback on failure"
+        },
+        {
+            "label": "Release: Minor",
+            "type": "shell",
+            "command": "./scripts/release.sh",
+            "args": ["minor"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "none",
+            "problemMatcher": [],
+            "detail": "Bump minor version, build, deploy, commit, tag, and push (x.Y.0) — with rollback on failure"
+        },
+        {
+            "label": "Release: Major",
+            "type": "shell",
+            "command": "./scripts/release.sh",
+            "args": ["major"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "none",
+            "problemMatcher": [],
+            "detail": "Bump major version, build, deploy, commit, tag, and push (X.0.0) — with rollback on failure"
+        }
+    ]
+}

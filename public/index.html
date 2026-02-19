@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EYC Weather</title>
-<link rel="stylesheet" href="/fonts/css/fontawesome.min.css">
-<link rel="stylesheet" href="/fonts/css/sharp-duotone-solid.min.css">
+<link rel="stylesheet" href="fonts/css/fontawesome.min.css">
+<link rel="stylesheet" href="fonts/css/sharp-duotone-solid.min.css">
 <style>
 /* ── Reset & Base ──────────────────────────────────────────────────────── */
 *,
@@ -30,6 +30,7 @@
   --color-dial:      oklch(0.94 0.005 250);
   --color-tick:      oklch(0.50 0.02 250);
   --color-moon-lit:    oklch(0.92 0.03 85);    /* warm white */
+  --color-moon-dark:   oklch(0.75 0.02 85);    /* muted tan — unlit side */
   --color-moon-stroke: var(--color-hand);     /* outline for contrast */
 
   --card-shadow:     0 1px 3px oklch(0 0 0 / 0.08),
@@ -51,6 +52,7 @@
     --color-dial:      oklch(0.18 0.01 250);
     --color-tick:      oklch(0.55 0.015 250);
     --color-moon-lit:    oklch(0.88 0.04 85);
+    --color-moon-dark:   oklch(0.35 0.02 85);    /* dark unlit side on dark dial */
     --color-moon-stroke: transparent;           /* no outline needed on dark dial */
 
     --card-shadow:     0 1px 3px oklch(0 0 0 / 0.3),
@@ -158,13 +160,13 @@ header p {
 /* ── Wind info text ────────────────────────────────────────────────────── */
 .wind-info {
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 1.35rem;
   line-height: 1.5;
 }
 
 .wind-info .wind-current {
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 1.5rem;
   color: var(--color-accent);
 }
 
@@ -308,6 +310,14 @@ header p {
   .icon-temperature-frigid { --fa-primary-color: oklch(0.62 0.14 250); --fa-secondary-color: oklch(0.78 0.10 230); --fa-secondary-opacity: 0.7; }
 }
 
+/* ── Footer ───────────────────────────────────────────────────────────── */
+footer {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  opacity: 0.5;
+}
+
 /* ── Loading / error states ────────────────────────────────────────────── */
 .status-msg {
   color: var(--color-text-dim);
@@ -360,12 +370,14 @@ header p {
   </div>
 </div>
 
+<footer id="version"></footer>
+
 <script>
 // ── Tide Clock ──────────────────────────────────────────────────────────
 
 /** Fetch hi/lo predictions from our backend. */
 async function fetchTides() {
-  const res = await fetch('/api/tides');
+  const res = await fetch('api/tides');
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const data = await res.json();
   // Convert time strings to Date objects
@@ -636,11 +648,10 @@ function buildClockSVG() {
   moonGroup.style.transformOrigin = `${cx}px ${moonCY}px`;
   moonGroup.style.transition = 'transform 1s ease-in-out';
 
-  // Base circle at 50% opacity (dark/unlit portion visible as translucent)
+  // Base circle — the unlit (dark) side of the moon
   moonGroup.appendChild(el('circle', {
     cx, cy: moonCY, r: moonR,
-    fill: 'var(--color-moon-lit)',
-    opacity: '0.5',
+    fill: 'var(--color-moon-dark)',
   }));
 
   // Lit portion at full opacity (path updated dynamically)
@@ -738,7 +749,7 @@ function updateClock() {
 /** Fetch the latest water level from Providence (station 8454000). */
 async function refreshWaterLevel() {
   try {
-    const res = await fetch('/api/observations/8454000/water_level');
+    const res = await fetch('api/observations/8454000/water_level');
     if (!res.ok) return;
     const json = await res.json();
     if (!json.data?.length) return;
@@ -896,7 +907,7 @@ function conditionToIcon(condition, timeOfDay) {
 
 async function refreshConditions() {
   try {
-    const res = await fetch('/api/conditions');
+    const res = await fetch('api/conditions');
     if (!res.ok) throw new Error(`API error ${res.status}`);
     const data = await res.json();
 
@@ -937,7 +948,7 @@ function iconColorClass(iconName) {
 
 async function refreshForecast() {
   try {
-    const res = await fetch('/api/forecast');
+    const res = await fetch('api/forecast');
     if (!res.ok) throw new Error(`API error ${res.status}`);
     const { forecast } = await res.json();
 
@@ -974,9 +985,17 @@ const WIND_SOURCES = [
 
 /** Fetch wind observations for a single station. */
 async function fetchWindData(station) {
-  const res = await fetch(`/api/observations/${station}/wind`);
-  if (!res.ok) throw new Error(`API error ${res.status}`);
+  console.log(`[wind] Fetching station ${station}…`);
+  const res = await fetch(`api/observations/${station}/wind`);
+  if (!res.ok) {
+    console.error(`[wind] Station ${station}: HTTP ${res.status} ${res.statusText}`);
+    throw new Error(`API error ${res.status}`);
+  }
   const json = await res.json();
+  console.log(`[wind] Station ${station}: ${json.data?.length ?? 0} observations`);
+  if (!json.data || json.data.length === 0) {
+    console.warn(`[wind] Station ${station}: empty data array`);
+  }
   return json.data.map(d => ({
     time: new Date(d.time),
     speed: parseFloat(d.s) || 0,
@@ -998,9 +1017,16 @@ async function fetchAllWind() {
   );
 
   const merged = [];
-  for (const r of results) {
-    if (r.status === 'fulfilled') merged.push(...r.value);
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      merged.push(...r.value);
+    } else {
+      console.error(`[wind] Source ${WIND_SOURCES[i].station} failed:`, r.reason);
+    }
   }
+
+  console.log(`[wind] Merged total: ${merged.length} observations`);
 
   // Sort oldest-first so newest draws on top
   merged.sort((a, b) => a.time - b.time);
@@ -1213,12 +1239,16 @@ let windObservations = [];
 async function refreshWind() {
   try {
     windObservations = await fetchAllWind();
+    if (windObservations.length === 0) {
+      console.warn('[wind] No observations after merge — compass will be empty');
+    }
     const container = document.getElementById('wind-compass-container');
     container.innerHTML = '';
     container.appendChild(buildCompassSVG(windObservations));
     updateWindInfo(windObservations);
+    console.log(`[wind] Compass rebuilt with ${windObservations.length} observations`);
   } catch (err) {
-    console.warn('Wind refresh failed:', err);
+    console.error('[wind] refreshWind failed:', err);
   }
 }
 
@@ -1272,6 +1302,15 @@ async function init() {
   // ── Wind compass ────────────────────────────────────────────────────
   await refreshWind();
   setInterval(refreshWind, 60_000);
+
+  // ── Version footer ─────────────────────────────────────────────────
+  try {
+    const vRes = await fetch('api/version');
+    if (vRes.ok) {
+      const { version } = await vRes.json();
+      document.getElementById('version').textContent = `v${version}`;
+    }
+  } catch (_) { /* non-critical */ }
 }
 
 init();
