@@ -142,6 +142,31 @@ header p {
   font-size: 0.85rem;
 }
 
+/* ── Wind compass SVG ──────────────────────────────────────────────────── */
+.wind-compass-svg {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1;
+}
+
+/* ── Wind info text ────────────────────────────────────────────────────── */
+.wind-info {
+  text-align: center;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.wind-info .wind-current {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--color-accent);
+}
+
+.wind-info .wind-detail {
+  color: var(--color-text-dim);
+  font-size: 0.85rem;
+}
+
 /* ── Loading / error states ────────────────────────────────────────────── */
 .status-msg {
   color: var(--color-text-dim);
@@ -166,6 +191,15 @@ header p {
       <p class="status-msg">Loading tide data&hellip;</p>
     </div>
     <div class="tide-info" id="tide-info" hidden></div>
+  </div>
+
+  <!-- Wind Compass card -->
+  <div class="card" id="wind-card">
+    <h2>Wind</h2>
+    <div id="wind-compass-container">
+      <p class="status-msg">Loading wind data&hellip;</p>
+    </div>
+    <div class="wind-info" id="wind-info" hidden></div>
   </div>
 </div>
 
@@ -471,6 +505,262 @@ function updateClock() {
   }
 }
 
+// ── Wind Compass ────────────────────────────────────────────────────────
+
+/** Wind source definitions.  Each gets its own hue on the compass. */
+const WIND_SOURCES = [
+  { station: '8453662', label: 'NOAA Providence', hue: 250 },
+  // Future: { station: 'wunderground', label: 'EYC PWS', hue: 30 },
+];
+
+/** Fetch wind observations for a single station. */
+async function fetchWindData(station) {
+  const res = await fetch(`/api/observations/${station}/wind`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  const json = await res.json();
+  return json.data.map(d => ({
+    time: new Date(d.time),
+    speed: parseFloat(d.s) || 0,
+    gust: parseFloat(d.g) || 0,
+    dir: parseFloat(d.d) || 0,
+    dirLabel: d.dr || '',
+    station,
+  }));
+}
+
+/**
+ * Fetch wind data from all configured sources and return a merged array
+ * sorted by time (oldest first).  Each entry carries its source's hue.
+ */
+async function fetchAllWind() {
+  const sourceMap = new Map(WIND_SOURCES.map(s => [s.station, s]));
+  const results = await Promise.allSettled(
+    WIND_SOURCES.map(s => fetchWindData(s.station)),
+  );
+
+  const merged = [];
+  for (const r of results) {
+    if (r.status === 'fulfilled') merged.push(...r.value);
+  }
+
+  // Sort oldest-first so newest draws on top
+  merged.sort((a, b) => a.time - b.time);
+
+  // Attach hue from source config
+  for (const obs of merged) {
+    obs.hue = sourceMap.get(obs.station)?.hue ?? 250;
+  }
+
+  return merged;
+}
+
+/**
+ * Build (or rebuild) the wind compass SVG.
+ *
+ * @param {object[]} observations  Sorted oldest→newest, each with
+ *   speed, gust, dir (degrees), hue (oklch hue angle).
+ */
+function buildCompassSVG(observations) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const size = 320;
+  const cx = size / 2;
+  const cy = size / 2;
+  const outerR = 148;
+  const plotR = 128;       // max radius for wind segments
+  const labelR = 140;      // direction labels
+  const ringLabelR = 6;    // offset for speed ring numbers from ring
+
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+  svg.classList.add('wind-compass-svg');
+
+  // Helpers (same pattern as tide clock)
+  const polar = (angleDeg, r) => ({
+    x: cx + r * Math.sin(angleDeg * Math.PI / 180),
+    y: cy - r * Math.cos(angleDeg * Math.PI / 180),
+  });
+
+  const el = (tag, attrs) => {
+    const e = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+
+  const textStyle = {
+    'text-anchor': 'middle',
+    'dominant-baseline': 'central',
+    'font-family': 'system-ui, -apple-system, sans-serif',
+  };
+
+  // ── Dial background ───────────────────────────────────────────────────
+  svg.appendChild(el('circle', {
+    cx, cy, r: outerR,
+    fill: 'var(--color-dial)',
+    stroke: 'var(--color-border)',
+    'stroke-width': '2',
+  }));
+
+  // ── Compute speed scale ───────────────────────────────────────────────
+  // Find the maximum gust across all observations; fall back to 10 kt
+  let maxVal = 0;
+  for (const obs of observations) {
+    if (obs.gust > maxVal) maxVal = obs.gust;
+    if (obs.speed > maxVal) maxVal = obs.speed;
+  }
+  if (maxVal < 1) maxVal = 10; // sensible default when calm
+
+  // Round up to a nice ring interval (multiples of 5)
+  const ringStep = maxVal <= 10 ? 5 : maxVal <= 25 ? 5 : 10;
+  const maxRing = Math.ceil(maxVal / ringStep) * ringStep;
+
+  // ── Speed rings ───────────────────────────────────────────────────────
+  const numRings = Math.round(maxRing / ringStep);
+  for (let i = 1; i <= numRings; i++) {
+    const r = (i / numRings) * plotR;
+    svg.appendChild(el('circle', {
+      cx, cy, r,
+      fill: 'none',
+      stroke: 'var(--color-border)',
+      'stroke-width': '0.8',
+      'stroke-dasharray': '3 3',
+    }));
+
+    // Speed label on the north axis (just right of 12-o'clock)
+    const speedVal = i * ringStep;
+    const labelPos = { x: cx + ringLabelR + 8, y: cy - r };
+    const ringLabel = el('text', {
+      x: labelPos.x,
+      y: labelPos.y,
+      ...textStyle,
+      'text-anchor': 'start',
+      'font-size': '8',
+      fill: 'var(--color-text-dim)',
+      opacity: '0.6',
+    });
+    ringLabel.textContent = String(speedVal);
+    svg.appendChild(ringLabel);
+  }
+
+  // ── Compass direction labels ──────────────────────────────────────────
+  const directions = [
+    { label: 'N',  angle: 0 },
+    { label: 'NE', angle: 45 },
+    { label: 'E',  angle: 90 },
+    { label: 'SE', angle: 135 },
+    { label: 'S',  angle: 180 },
+    { label: 'SW', angle: 225 },
+    { label: 'W',  angle: 270 },
+    { label: 'NW', angle: 315 },
+  ];
+
+  for (const { label, angle } of directions) {
+    const isCardinal = label.length === 1;
+    const p = polar(angle, labelR);
+    const dirLabel = el('text', {
+      x: p.x,
+      y: p.y,
+      ...textStyle,
+      'font-size': isCardinal ? '12' : '9',
+      'font-weight': isCardinal ? '700' : '400',
+      fill: isCardinal ? 'var(--color-text)' : 'var(--color-text-dim)',
+    });
+    dirLabel.textContent = label;
+    svg.appendChild(dirLabel);
+  }
+
+  // ── Direction tick marks ──────────────────────────────────────────────
+  for (let i = 0; i < 16; i++) {
+    const angle = i * 22.5;
+    const isCardinal = (i % 4 === 0);      // N, E, S, W
+    const isIntercardinal = (i % 2 === 0);  // NE, SE, SW, NW
+    if (isCardinal || isIntercardinal) continue; // already have labels there
+    const p1 = polar(angle, plotR + 3);
+    const p2 = polar(angle, plotR + 8);
+    svg.appendChild(el('line', {
+      x1: p1.x, y1: p1.y,
+      x2: p2.x, y2: p2.y,
+      stroke: 'var(--color-tick)',
+      'stroke-width': '0.8',
+      'stroke-linecap': 'round',
+    }));
+  }
+
+  // ── Wind segments (oldest first → newest on top) ──────────────────────
+  const count = observations.length;
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  for (let i = 0; i < count; i++) {
+    const obs = observations[i];
+    const alpha = count === 1 ? 1 : 0.2 + 0.8 * (i / (count - 1));
+    const lightness = isDark ? 0.7 : 0.5;
+    const chroma = isDark ? 0.18 : 0.15;
+
+    const speedR = (obs.speed / maxRing) * plotR;
+    const gustR = (obs.gust / maxRing) * plotR;
+
+    const p1 = polar(obs.dir, speedR);
+    const p2 = polar(obs.dir, gustR);
+
+    svg.appendChild(el('line', {
+      x1: p1.x, y1: p1.y,
+      x2: p2.x, y2: p2.y,
+      stroke: `oklch(${lightness} ${chroma} ${obs.hue} / ${alpha.toFixed(2)})`,
+      'stroke-width': '3',
+      'stroke-linecap': 'round',
+    }));
+
+    // Small dot at the gust end of the newest observation
+    if (i === count - 1) {
+      svg.appendChild(el('circle', {
+        cx: p2.x, cy: p2.y, r: 4,
+        fill: `oklch(${lightness} ${chroma} ${obs.hue})`,
+      }));
+    }
+  }
+
+  // ── Center dot ────────────────────────────────────────────────────────
+  svg.appendChild(el('circle', {
+    cx, cy, r: 3,
+    fill: 'var(--color-tick)',
+  }));
+
+  return svg;
+}
+
+/**
+ * Update the wind info text beneath the compass.
+ */
+function updateWindInfo(observations) {
+  const infoEl = document.getElementById('wind-info');
+  if (!infoEl || !observations.length) return;
+
+  infoEl.hidden = false;
+  const latest = observations[observations.length - 1];
+
+  infoEl.innerHTML = `
+    <div class="wind-current">${latest.dirLabel} ${latest.speed.toFixed(1)} kt</div>
+    <div class="wind-detail">Gusting ${latest.gust.toFixed(1)} kt</div>
+  `;
+}
+
+// ── Wind state & update ─────────────────────────────────────────────────
+
+let windObservations = [];
+
+async function refreshWind() {
+  try {
+    windObservations = await fetchAllWind();
+    const container = document.getElementById('wind-compass-container');
+    container.innerHTML = '';
+    container.appendChild(buildCompassSVG(windObservations));
+    updateWindInfo(windObservations);
+  } catch (err) {
+    console.warn('Wind refresh failed:', err);
+  }
+}
+
+// ── Init ────────────────────────────────────────────────────────────────
+
 async function init() {
   const container = document.getElementById('tide-clock-container');
 
@@ -497,8 +787,12 @@ async function init() {
 
   } catch (err) {
     container.innerHTML = `<p class="status-msg">Unable to load tide data.</p>`;
-    console.error('Init error:', err);
+    console.error('Tide init error:', err);
   }
+
+  // ── Wind compass ────────────────────────────────────────────────────
+  await refreshWind();
+  setInterval(refreshWind, 60_000);
 }
 
 init();
