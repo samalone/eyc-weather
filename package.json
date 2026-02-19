@@ -1,6 +1,6 @@
 {
   "name": "eyc-weather",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Weather dashboard for Edgewood Yacht Club",
   "main": "server.js",
