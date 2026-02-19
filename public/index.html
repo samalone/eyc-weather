@@ -33,6 +33,7 @@
   --color-moon-dark:   oklch(0.75 0.02 85);    /* muted tan — unlit side */
   --color-moon-stroke: var(--color-hand);     /* outline for contrast */
   --color-night:       oklch(0.20 0.02 250 / 0.08); /* light mode: night slightly darker */
+  --color-daylight:    oklch(0 0 0 / 0);             /* light mode: day is default bg */
 
   --card-shadow:     0 1px 3px oklch(0 0 0 / 0.08),
                      0 4px 12px oklch(0 0 0 / 0.06);
@@ -1174,16 +1175,27 @@ function buildTideGraphSVG(curve, measured, nauticalTimes) {
   }
 
   // ── Nautical daylight / night shading ─────────────────────────────────
-  // nauticalTimes: { dawn: "YYYY-MM-DDTHH:MM", dusk: "YYYY-MM-DDTHH:MM" }
-  // Dark mode: shade the daylight portion slightly lighter.
-  // Light mode: shade the night portions slightly darker.
+  // All three rects are always drawn; CSS variables control which are
+  // visible so the graph responds to light/dark mode without rebuilding.
+  //   --color-night:    visible in light mode, transparent in dark mode
+  //   --color-daylight: visible in dark mode, transparent in light mode
   if (nauticalTimes) {
     const dawnMs = nauticalTimes.dawn ? new Date(nauticalTimes.dawn).getTime() : null;
     const duskMs = nauticalTimes.dusk ? new Date(nauticalTimes.dusk).getTime() : null;
-    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-    if (isDark && dawnMs && duskMs) {
-      // Dark mode: highlight the daylight band
+    // Pre-dawn night
+    if (dawnMs) {
+      const xDawn = Math.min(xOf(dawnMs), ml + plotW);
+      if (xDawn > ml) {
+        svg.appendChild(el('rect', {
+          x: ml, y: mt, width: xDawn - ml, height: plotH,
+          fill: 'var(--color-night)',
+        }));
+      }
+    }
+
+    // Daylight band
+    if (dawnMs && duskMs) {
       const x1 = Math.max(xOf(dawnMs), ml);
       const x2 = Math.min(xOf(duskMs), ml + plotW);
       if (x2 > x1) {
@@ -1192,26 +1204,17 @@ function buildTideGraphSVG(curve, measured, nauticalTimes) {
           fill: 'var(--color-daylight)',
         }));
       }
-    } else if (!isDark) {
-      // Light mode: shade the night portions
-      if (dawnMs) {
-        const xDawn = Math.min(xOf(dawnMs), ml + plotW);
-        if (xDawn > ml) {
-          svg.appendChild(el('rect', {
-            x: ml, y: mt, width: xDawn - ml, height: plotH,
-            fill: 'var(--color-night)',
-          }));
-        }
-      }
-      if (duskMs) {
-        const xDusk = Math.max(xOf(duskMs), ml);
-        const xEnd = ml + plotW;
-        if (xDusk < xEnd) {
-          svg.appendChild(el('rect', {
-            x: xDusk, y: mt, width: xEnd - xDusk, height: plotH,
-            fill: 'var(--color-night)',
-          }));
-        }
+    }
+
+    // Post-dusk night
+    if (duskMs) {
+      const xDusk = Math.max(xOf(duskMs), ml);
+      const xEnd = ml + plotW;
+      if (xDusk < xEnd) {
+        svg.appendChild(el('rect', {
+          x: xDusk, y: mt, width: xEnd - xDusk, height: plotH,
+          fill: 'var(--color-night)',
+        }));
       }
     }
   }
