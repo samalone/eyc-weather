@@ -37,6 +37,8 @@
   --color-daylight:    oklch(0 0 0 / 0);             /* light mode: day is default bg */
   --wind-trail-l:      0.5;                          /* wind compass trail lightness */
   --wind-trail-c:      0.15;                         /* wind compass trail chroma */
+  --beaufort-l:        0.7;                         /* Beaufort ring lightness */
+  --beaufort-c:        0.15;                         /* Beaufort ring chroma */
 
   --card-shadow:     0 1px 3px oklch(0 0 0 / 0.08),
                      0 4px 12px oklch(0 0 0 / 0.06);
@@ -63,6 +65,8 @@
     --color-daylight:    oklch(0.90 0.01 250 / 0.10); /* dark mode: day slightly lighter */
     --wind-trail-l:      0.7;
     --wind-trail-c:      0.18;
+    --beaufort-l:        0.5;
+    --beaufort-c:        0.18;
 
     --card-shadow:     0 1px 3px oklch(0 0 0 / 0.3),
                        0 4px 12px oklch(0 0 0 / 0.25);
@@ -1381,6 +1385,31 @@ async function fetchAllWind() {
   return merged;
 }
 
+      /**
+       * Return an oklch color string for a wind speed using Beaufort scale hues.
+       * Lightness and chroma come from CSS custom properties so colors adapt to
+       * light/dark mode automatically.
+       */
+      const BEAUFORT_HUES = [
+        [3, 250], // Force 0–1: calm / light air
+        [6, 220], // Force 2: light breeze
+        [10, 180], // Force 3: gentle breeze
+        [16, 145], // Force 4: moderate breeze
+        [21, 125], // Force 5: fresh breeze
+        [27, 100], // Force 6: strong breeze
+        [33, 70], // Force 7: near gale
+        [40, 45], // Force 8: gale
+        [47, 30], // Force 9: strong gale
+        [55, 0], // Force 10: storm
+      ];
+      function beaufortColor(knots) {
+        let hue = 330; // Force 11+: violent storm / hurricane
+        for (const [maxKt, h] of BEAUFORT_HUES) {
+          if (knots <= maxKt) { hue = h; break; }
+        }
+        return `oklch(var(--beaufort-l) var(--beaufort-c) ${hue})`;
+      }
+
 /**
  * Build (or rebuild) the wind compass SVG.
  *
@@ -1434,16 +1463,18 @@ function buildCompassSVG(observations) {
   const numRings = Math.round(maxRing / ringStep);
   for (let i = 1; i <= numRings; i++) {
     const r = (i / numRings) * plotR;
-    svg.appendChild(el('circle', {
+    const speedVal = i * ringStep;
+    const bColor = beaufortColor(speedVal);
+
+    const ring = el('circle', {
       cx, cy, r,
       fill: 'none',
-      stroke: 'var(--color-tick)',
       'stroke-width': '0.8',
-      opacity: '0.5',
-    }));
+    });
+    ring.style.stroke = bColor;
+    svg.appendChild(ring);
 
     // Speed label on the north axis (just right of 12-o'clock)
-    const speedVal = i * ringStep;
     const labelPos = { x: cx + ringLabelR + 8, y: cy - r };
     const ringLabel = el('text', {
       x: labelPos.x,
@@ -1451,8 +1482,8 @@ function buildCompassSVG(observations) {
       ...textStyle,
       'text-anchor': 'start',
       'font-size': '8',
-      fill: 'var(--color-text-dim)',
     });
+    ringLabel.style.fill = bColor;
     ringLabel.textContent = String(speedVal);
     svg.appendChild(ringLabel);
   }
@@ -1536,10 +1567,9 @@ function buildCompassSVG(observations) {
   }
 
   // ── Center dot ────────────────────────────────────────────────────────
-  svg.appendChild(el('circle', {
-    cx, cy, r: 3,
-    fill: 'var(--color-tick)',
-  }));
+  const centerDot = el('circle', { cx, cy, r: 3 });
+  centerDot.style.fill = beaufortColor(0);
+  svg.appendChild(centerDot);
 
   return svg;
 }
