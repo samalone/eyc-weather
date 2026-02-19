@@ -304,6 +304,37 @@ header p {
   color: var(--color-text);
 }
 
+.times-icon {
+  width: 1.6rem;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+/* Times card icon colors — dawn/dusk, moon, tide */
+.times-icon-dawn {
+  --fa-primary-color: oklch(0.75 0.15 65);
+  --fa-secondary-color: oklch(0.82 0.13 75);
+  --fa-secondary-opacity: 0.7;
+}
+
+.times-icon-dusk {
+  --fa-primary-color: oklch(0.60 0.14 35);
+  --fa-secondary-color: oklch(0.70 0.12 50);
+  --fa-secondary-opacity: 0.7;
+}
+
+.times-icon-moon {
+  --fa-primary-color: oklch(0.58 0.10 250);
+  --fa-secondary-color: oklch(0.68 0.08 260);
+  --fa-secondary-opacity: 0.6;
+}
+
+.times-icon-tide {
+  --fa-primary-color: oklch(0.55 0.14 240);
+  --fa-secondary-color: oklch(0.65 0.12 250);
+  --fa-secondary-opacity: 0.7;
+}
+
 /* ── Duotone icon colors (light mode) ─────────────────────────────────── */
 .icon-sun              { --fa-primary-color: oklch(0.78 0.17 70);  --fa-secondary-color: oklch(0.85 0.14 80);  --fa-secondary-opacity: 0.7; }
 .icon-moon             { --fa-primary-color: oklch(0.72 0.08 250); --fa-secondary-color: oklch(0.80 0.06 260); --fa-secondary-opacity: 0.6; }
@@ -356,6 +387,12 @@ header p {
   .icon-sun-haze         { --fa-primary-color: oklch(0.55 0.02 70);  --fa-secondary-color: oklch(0.78 0.12 70);  --fa-secondary-opacity: 0.5; }
   .icon-temperature-hot  { --fa-primary-color: oklch(0.65 0.20 30);  --fa-secondary-color: oklch(0.75 0.16 40);  --fa-secondary-opacity: 0.7; }
   .icon-temperature-frigid { --fa-primary-color: oklch(0.62 0.14 250); --fa-secondary-color: oklch(0.78 0.10 230); --fa-secondary-opacity: 0.7; }
+
+  /* Times card icons — dark mode */
+  .times-icon-dawn { --fa-primary-color: oklch(0.80 0.16 65);  --fa-secondary-color: oklch(0.86 0.13 75);  --fa-secondary-opacity: 0.7; }
+  .times-icon-dusk { --fa-primary-color: oklch(0.68 0.14 35);  --fa-secondary-color: oklch(0.76 0.12 50);  --fa-secondary-opacity: 0.7; }
+  .times-icon-moon { --fa-primary-color: oklch(0.80 0.08 250); --fa-secondary-color: oklch(0.85 0.06 260); --fa-secondary-opacity: 0.6; }
+  .times-icon-tide { --fa-primary-color: oklch(0.62 0.14 240); --fa-secondary-color: oklch(0.72 0.12 250); --fa-secondary-opacity: 0.7; }
 }
 
 /* ── Footer ───────────────────────────────────────────────────────────── */
@@ -1041,6 +1078,25 @@ async function refreshForecast() {
 
 // ── Times Card ──────────────────────────────────────────────────────────
 
+/** Map event labels to FA icon + CSS color class. */
+const TIMES_ICONS = {
+  'Nautical dawn': { fa: 'fa-sunrise',          css: 'times-icon-dawn' },
+  'Nautical dusk': { fa: 'fa-sunset',           css: 'times-icon-dusk' },
+  'Moonrise':      { fa: 'fa-moon',             css: 'times-icon-moon' },
+  'Moonset':       { fa: 'fa-moon',             css: 'times-icon-moon' },
+};
+
+/** High/low tide icons (matched by prefix). */
+const TIDE_HIGH = { fa: 'fa-water-arrow-up',   css: 'times-icon-tide' };
+const TIDE_LOW  = { fa: 'fa-water-arrow-down', css: 'times-icon-tide' };
+
+function getTimesIcon(label) {
+  if (TIMES_ICONS[label]) return TIMES_ICONS[label];
+  if (label.startsWith('High tide')) return TIDE_HIGH;
+  if (label.startsWith('Low tide'))  return TIDE_LOW;
+  return { fa: 'fa-clock', css: '' };
+}
+
 /** Fetch upcoming events and render the Times table. */
 async function refreshTimes() {
   try {
@@ -1056,7 +1112,9 @@ async function refreshTimes() {
         minute: '2-digit',
         hour12: true,
       }).toLowerCase();
+      const icon = getTimesIcon(e.label);
       return `<tr>
+        <td class="times-icon ${icon.css}"><i class="fa-sharp-duotone fa-solid ${icon.fa}"></i></td>
         <td class="times-day">${day}</td>
         <td class="times-time">${time}</td>
         <td class="times-label">${e.label}</td>
