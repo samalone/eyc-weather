@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EYC Weather</title>
+<style>
+/* ── Reset & Base ──────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Light-mode palette (oklch) */
+  --color-bg:        oklch(0.97 0.005 250);
+  --color-surface:   oklch(1.00 0 0);
+  --color-text:      oklch(0.20 0.02 250);
+  --color-text-dim:  oklch(0.45 0.02 250);
+  --color-border:    oklch(0.88 0.01 250);
+  --color-accent:    oklch(0.55 0.15 250);   /* nautical blue */
+  --color-rising:    oklch(0.55 0.12 160);   /* teal-green */
+  --color-falling:   oklch(0.55 0.12 30);    /* warm rust */
+  --color-hand:      oklch(0.30 0.05 250);
+  --color-dial:      oklch(0.94 0.005 250);
+  --color-tick:      oklch(0.50 0.02 250);
+
+  --card-shadow:     0 1px 3px oklch(0 0 0 / 0.08),
+                     0 4px 12px oklch(0 0 0 / 0.06);
+  --radius:          12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg:        oklch(0.15 0.01 250);
+    --color-surface:   oklch(0.22 0.015 250);
+    --color-text:      oklch(0.90 0.01 250);
+    --color-text-dim:  oklch(0.60 0.015 250);
+    --color-border:    oklch(0.32 0.015 250);
+    --color-accent:    oklch(0.65 0.15 250);
+    --color-rising:    oklch(0.65 0.12 160);
+    --color-falling:   oklch(0.65 0.12 30);
+    --color-hand:      oklch(0.90 0.03 60);
+    --color-dial:      oklch(0.18 0.01 250);
+    --color-tick:      oklch(0.55 0.015 250);
+
+    --card-shadow:     0 1px 3px oklch(0 0 0 / 0.3),
+                       0 4px 12px oklch(0 0 0 / 0.25);
+  }
+}
+
+html {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+body {
+  min-height: 100dvh;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────── */
+header {
+  text-align: center;
+  padding: 1rem 0 0.5rem;
+}
+
+header h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+header p {
+  color: var(--color-text-dim);
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+}
+
+/* ── Card grid ─────────────────────────────────────────────────────────── */
+.dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 400px));
+  gap: 1rem;
+  width: 100%;
+  max-width: 900px;
+  padding: 1rem 0;
+  justify-content: center;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.card h2 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-dim);
+}
+
+/* ── Tide clock SVG ────────────────────────────────────────────────────── */
+.tide-clock-svg {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1;
+}
+
+/* ── Tide info text ────────────────────────────────────────────────────── */
+.tide-info {
+  text-align: center;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.tide-info .direction {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.tide-info .direction.rising  { color: var(--color-rising); }
+.tide-info .direction.falling { color: var(--color-falling); }
+
+.tide-info .next-event {
+  color: var(--color-text-dim);
+  font-size: 0.85rem;
+}
+
+/* ── Loading / error states ────────────────────────────────────────────── */
+.status-msg {
+  color: var(--color-text-dim);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 2rem 0;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Edgewood Yacht Club</h1>
+  <p>Cranston, RI &mdash; Pawtuxet Cove</p>
+</header>
+
+<div class="dashboard">
+  <!-- Tide Clock card -->
+  <div class="card" id="tide-card">
+    <h2>Tide Clock</h2>
+    <div id="tide-clock-container">
+      <p class="status-msg">Loading tide data&hellip;</p>
+    </div>
+    <div class="tide-info" id="tide-info" hidden></div>
+  </div>
+</div>
+
+<script>
+// ── Tide Clock ──────────────────────────────────────────────────────────
+
+/** Fetch hi/lo predictions from our backend. */
+async function fetchTides() {
+  const res = await fetch('/api/tides');
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  const data = await res.json();
+  // Convert time strings to Date objects
+  return data.predictions.map(p => ({
+    time: new Date(p.time),
+    height: p.height,
+    type: p.type,
+  }));
+}
+
+/**
+ * Given sorted hi/lo predictions and a timestamp, find the previous and
+ * next events that bracket `now`.
+ */
+function bracketingEvents(predictions, now) {
+  let prev = null;
+  let next = null;
+  for (const p of predictions) {
+    if (p.time <= now) {
+      prev = p;
+    } else {
+      next = p;
+      break;
+    }
+  }
+  return { prev, next };
+}
+
+/**
+ * Compute the tide clock hand angle (degrees, 0 = 12-o'clock / high tide,
+ * increasing clockwise).
+ *
+ *   High → Low (falling):  0° → 180°
+ *   Low  → High (rising): 180° → 360°
+ *
+ * Uses cosine easing so the hand moves faster mid-cycle and slows near
+ * the extremes, mimicking the sinusoidal shape of real tides.
+ */
+function tideAngle(prev, next, now) {
+  const elapsed = now - prev.time;
+  const duration = next.time - prev.time;
+  const progress = Math.max(0, Math.min(1, elapsed / duration));
+
+  // Cosine easing: slow at endpoints, fast in the middle
+  const eased = (1 - Math.cos(progress * Math.PI)) / 2;
+
+  if (prev.type === 'H') {
+    // Falling: high (0°) → low (180°)
+    return eased * 180;
+  } else {
+    // Rising: low (180°) → high (360°)
+    return 180 + eased * 180;
+  }
+}
+
+// ── SVG clock face builder ──────────────────────────────────────────────
+
+function buildClockSVG() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const size = 320;
+  const cx = size / 2;
+  const cy = size / 2;
+  const outerR = 148;
+  const arcR = 138;            // colored band sits just inside the rim
+  const tickOuterR = 130;      // ticks start inside the arc band
+  const tickInnerMajor = 115;
+  const tickInnerMinor = 121;
+  const numberR = 98;          // hour numbers
+  const hiloLabelR = 120;      // HIGH / LOW text (between ticks and numbers)
+  const labelR = 52;           // RISING / FALLING text (inner area)
+  const handTipR = 108;        // hand reaches just short of numbers
+
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+  svg.classList.add('tide-clock-svg');
+
+  // Helper: polar to cartesian (0° = 12 o'clock, CW positive)
+  const polar = (angle, r) => ({
+    x: cx + r * Math.sin(angle * Math.PI / 180),
+    y: cy - r * Math.cos(angle * Math.PI / 180),
+  });
+
+  // Helper: create SVG element with attributes
+  const el = (tag, attrs) => {
+    const e = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+
+  // --- Dial background ---
+  svg.appendChild(el('circle', {
+    cx, cy, r: outerR,
+    fill: 'var(--color-dial)',
+    stroke: 'var(--color-border)',
+    'stroke-width': '2',
+  }));
+
+  // --- Colored arcs: falling (right) and rising (left) ---
+  // Wide bands along the outer rim
+  svg.appendChild(el('path', {
+    d: `M ${cx} ${cy - arcR} A ${arcR} ${arcR} 0 0 1 ${cx} ${cy + arcR}`,
+    fill: 'none',
+    stroke: 'var(--color-falling)',
+    'stroke-width': '8',
+    opacity: '0.18',
+  }));
+
+  svg.appendChild(el('path', {
+    d: `M ${cx} ${cy + arcR} A ${arcR} ${arcR} 0 0 1 ${cx} ${cy - arcR}`,
+    fill: 'none',
+    stroke: 'var(--color-rising)',
+    'stroke-width': '8',
+    opacity: '0.18',
+  }));
+
+  // --- Tick marks (12 ticks = every 30°) ---
+  for (let i = 0; i < 12; i++) {
+    const angle = i * 30;
+    const isCardinal = (i === 0 || i === 6);   // HIGH / LOW positions
+    const isQuarter = (i === 3 || i === 9);     // 3-hour marks
+    const inner = (isCardinal || isQuarter) ? tickInnerMajor : tickInnerMinor;
+    const width = isCardinal ? '2.5' : isQuarter ? '2' : '1.2';
+    const p1 = polar(angle, tickOuterR);
+    const p2 = polar(angle, inner);
+    svg.appendChild(el('line', {
+      x1: p1.x, y1: p1.y,
+      x2: p2.x, y2: p2.y,
+      stroke: 'var(--color-tick)',
+      'stroke-width': width,
+      'stroke-linecap': 'round',
+    }));
+  }
+
+  // --- Text labels ---
+  const textStyle = {
+    'text-anchor': 'middle',
+    'dominant-baseline': 'central',
+    'font-family': 'system-ui, -apple-system, sans-serif',
+    fill: 'var(--color-text)',
+  };
+
+  // HIGH at top (between ticks and arc band, clear of hand)
+  const highLabel = el('text', {
+    x: cx, y: cy - hiloLabelR,
+    ...textStyle,
+    'font-size': '10',
+    'font-weight': '700',
+    'letter-spacing': '0.08em',
+  });
+  highLabel.textContent = 'HIGH';
+  svg.appendChild(highLabel);
+
+  // LOW at bottom
+  const lowLabel = el('text', {
+    x: cx, y: cy + hiloLabelR,
+    ...textStyle,
+    'font-size': '10',
+    'font-weight': '700',
+    'letter-spacing': '0.08em',
+  });
+  lowLabel.textContent = 'LOW';
+  svg.appendChild(lowLabel);
+
+  // Hour numbers 1–5 on each side
+  for (let h = 1; h <= 5; h++) {
+    // Right side (falling): hours until low
+    const rp = polar(h * 30, numberR);
+    const rn = el('text', {
+      x: rp.x, y: rp.y, ...textStyle,
+      'font-size': '13', 'font-weight': '400',
+      fill: 'var(--color-text-dim)',
+    });
+    rn.textContent = String(h);
+    svg.appendChild(rn);
+
+    // Left side (rising): hours until high
+    const lp = polar(360 - h * 30, numberR);
+    const ln = el('text', {
+      x: lp.x, y: lp.y, ...textStyle,
+      'font-size': '13', 'font-weight': '400',
+      fill: 'var(--color-text-dim)',
+    });
+    ln.textContent = String(h);
+    svg.appendChild(ln);
+  }
+
+  // FALLING / RISING labels (inside the number ring)
+  const fallingLabel = el('text', {
+    x: polar(90, labelR).x, y: polar(90, labelR).y,
+    ...textStyle,
+    'font-size': '9',
+    'font-weight': '600',
+    'letter-spacing': '0.12em',
+    fill: 'var(--color-falling)',
+    opacity: '0.6',
+  });
+  fallingLabel.textContent = 'FALLING';
+  svg.appendChild(fallingLabel);
+
+  const risingLabel = el('text', {
+    x: polar(270, labelR).x, y: polar(270, labelR).y,
+    ...textStyle,
+    'font-size': '9',
+    'font-weight': '600',
+    'letter-spacing': '0.12em',
+    fill: 'var(--color-rising)',
+    opacity: '0.6',
+  });
+  risingLabel.textContent = 'RISING';
+  svg.appendChild(risingLabel);
+
+  // --- Hand (rotated dynamically) ---
+  const handGroup = document.createElementNS(ns, 'g');
+  handGroup.setAttribute('id', 'tide-hand');
+  handGroup.style.transformOrigin = `${cx}px ${cy}px`;
+  handGroup.style.transition = 'transform 1s ease-in-out';
+
+  // Tail (short counterweight below center)
+  handGroup.appendChild(el('line', {
+    x1: cx, y1: cy + 22,
+    x2: cx, y2: cy,
+    stroke: 'var(--color-hand)',
+    'stroke-width': '4',
+    'stroke-linecap': 'round',
+  }));
+
+  // Shaft
+  handGroup.appendChild(el('line', {
+    x1: cx, y1: cy,
+    x2: cx, y2: cy - handTipR + 8,
+    stroke: 'var(--color-hand)',
+    'stroke-width': '3',
+    'stroke-linecap': 'round',
+  }));
+
+  // Arrow tip
+  const tipY = cy - handTipR;
+  handGroup.appendChild(el('polygon', {
+    points: `${cx},${tipY} ${cx - 5.5},${tipY + 12} ${cx + 5.5},${tipY + 12}`,
+    fill: 'var(--color-hand)',
+  }));
+
+  svg.appendChild(handGroup);
+
+  // --- Center hub (on top of hand) ---
+  svg.appendChild(el('circle', {
+    cx, cy, r: 5,
+    fill: 'var(--color-hand)',
+  }));
+
+  return svg;
+}
+
+// ── Update loop ─────────────────────────────────────────────────────────
+
+let predictions = [];
+
+function updateClock() {
+  if (!predictions.length) return;
+
+  const now = new Date();
+  const { prev, next } = bracketingEvents(predictions, now);
+
+  if (!prev || !next) {
+    // Can happen briefly around midnight; will fix on next fetch
+    return;
+  }
+
+  const angle = tideAngle(prev, next, now);
+  const hand = document.getElementById('tide-hand');
+  if (hand) {
+    hand.style.transform = `rotate(${angle}deg)`;
+  }
+
+  // Update info text
+  const infoEl = document.getElementById('tide-info');
+  if (infoEl) {
+    infoEl.hidden = false;
+
+    const isFalling = prev.type === 'H';
+    const dirClass = isFalling ? 'falling' : 'rising';
+    const dirText = isFalling ? 'Falling' : 'Rising';
+
+    const nextType = next.type === 'H' ? 'High' : 'Low';
+    const nextTimeStr = next.time.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+    infoEl.innerHTML = `
+      <div class="direction ${dirClass}">${dirText}</div>
+      <div class="next-event">Next ${nextType}: ${nextTimeStr} (${next.height.toFixed(1)} ft)</div>
+    `;
+  }
+}
+
+async function init() {
+  const container = document.getElementById('tide-clock-container');
+
+  try {
+    predictions = await fetchTides();
+
+    // Build and insert the SVG clock
+    container.innerHTML = '';
+    container.appendChild(buildClockSVG());
+
+    // Initial update, then tick every 60 s
+    updateClock();
+    setInterval(updateClock, 60_000);
+
+    // Re-fetch from API every 5 min (handles day rollover)
+    setInterval(async () => {
+      try {
+        predictions = await fetchTides();
+        updateClock();
+      } catch (e) {
+        console.warn('Tide refresh failed:', e);
+      }
+    }, 5 * 60_000);
+
+  } catch (err) {
+    container.innerHTML = `<p class="status-msg">Unable to load tide data.</p>`;
+    console.error('Init error:', err);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
