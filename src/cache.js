@@ -242,20 +242,23 @@ export class StationCache {
 
   /**
    * Remove observations whose timestamp falls outside the retention window.
+   *
+   * NOAA timestamps are US-Eastern local time (lst_ldt), e.g. "2026-02-19T14:30".
+   * The server may run in UTC (Docker), so we can't compare NOAA time strings
+   * against `Date.now()`.  Instead, trim relative to the newest observation —
+   * drop anything more than `#windowMs` older than the most recent point.
    */
   #trim(product) {
     const arr = this.#data.get(product);
-    // NOAA timestamps are local time (lst_ldt), so the cutoff must also be
-    // local.  toISOString() returns UTC which would trim everything in
-    // western-of-UTC time zones.
-    const cutoffDate = new Date(Date.now() - this.#windowMs);
-    const cutoff = normalizeTime(
-      `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}-${String(cutoffDate.getDate()).padStart(2, '0')} ${String(cutoffDate.getHours()).padStart(2, '0')}:${String(cutoffDate.getMinutes()).padStart(2, '0')}`,
-    );
+    if (arr.length === 0) return;
+
+    // Use the newest observation as the reference point, not the system clock.
+    const newestMs = new Date(arr[arr.length - 1].time).getTime();
+    const cutoffMs = newestMs - this.#windowMs;
 
     // Observations are sorted chronologically; find the first index to keep
     let firstKeep = 0;
-    while (firstKeep < arr.length && arr[firstKeep].time < cutoff) {
+    while (firstKeep < arr.length && new Date(arr[firstKeep].time).getTime() < cutoffMs) {
       firstKeep++;
     }
 
