@@ -236,9 +236,11 @@ export class StationCache {
     const [newest] = parseObservations(json.data);
     const arr = this.#data.get(product);
 
-    // Only append if it's genuinely newer than the last cached point
+    // Only append if it's genuinely newer than the last cached point.
+    // Using > (not !==) so that stale or reprocessed data from NOAA
+    // doesn't get appended out of chronological order.
     const lastTime = arr.length ? arr[arr.length - 1].time : null;
-    if (newest.time !== lastTime) {
+    if (!lastTime || newest.time > lastTime) {
       arr.push(newest);
     }
 

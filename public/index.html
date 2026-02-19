@@ -1332,9 +1332,11 @@ function buildTideGraphSVG(curve, measured, nauticalTimes) {
   }
 
   // ── Measured water level ──────────────────────────────────────────────
-  if (measured.length > 1) {
+  // Sort by time to guard against out-of-order data from the cache.
+  const sortedMeasured = [...measured].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+  if (sortedMeasured.length > 1) {
     let d = '';
-    for (const obs of measured) {
+    for (const obs of sortedMeasured) {
       const ms = new Date(obs.time).getTime();
       if (ms < t0 || ms > t1) continue;
       const h = parseFloat(obs.v);
