@@ -10,6 +10,7 @@ import {
 } from './src/noaa.js';
 import { StationCache } from './src/cache.js';
 import { getConditions, getForecast } from './src/nws.js';
+import { getAstroEvents, getDaylight, nowLocal } from './src/astro.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -120,6 +121,42 @@ app.get(bp('/api/tide-curve'), async (_req, res) => {
     console.error('[api] /api/tide-curve error:', err);
     res.status(502).json({ error: 'Failed to fetch tide curve' });
   }
+});
+
+/** Upcoming events: tides, twilight, moonrise/moonset (next 10). */
+app.get(bp('/api/times'), async (_req, res) => {
+  try {
+    const astro = getAstroEvents();
+    const tides = await getTidePredictions();
+
+    // All times are Eastern-local ISO strings ("YYYY-MM-DDTHH:MM")
+    const events = [
+      ...astro,
+      ...tides.map((t) => ({
+        time: t.time,   // already local ISO from NOAA
+        label: t.type === 'H'
+          ? `High tide (${t.height.toFixed(1)} ft)`
+          : `Low tide (${t.height.toFixed(1)} ft)`,
+      })),
+    ];
+
+    // Sort chronologically, filter to future, take first 10
+    const now = nowLocal();
+    const upcoming = events
+      .sort((a, b) => a.time.localeCompare(b.time))
+      .filter((e) => e.time > now)
+      .slice(0, 10);
+
+    res.json({ events: upcoming });
+  } catch (err) {
+    console.error('[api] /api/times error:', err);
+    res.status(502).json({ error: 'Failed to compute events' });
+  }
+});
+
+/** Today's nautical dawn/dusk times (for tide graph daylight shading). */
+app.get(bp('/api/daylight'), (_req, res) => {
+  res.json(getDaylight());
 });
 
 /** Current weather conditions from NWS (KPVD). */

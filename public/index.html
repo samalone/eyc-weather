@@ -32,6 +32,7 @@
   --color-moon-lit:    oklch(0.92 0.03 85);    /* warm white */
   --color-moon-dark:   oklch(0.75 0.02 85);    /* muted tan — unlit side */
   --color-moon-stroke: var(--color-hand);     /* outline for contrast */
+  --color-night:       oklch(0.20 0.02 250 / 0.08); /* light mode: night slightly darker */
 
   --card-shadow:     0 1px 3px oklch(0 0 0 / 0.08),
                      0 4px 12px oklch(0 0 0 / 0.06);
@@ -54,6 +55,8 @@
     --color-moon-lit:    oklch(0.88 0.04 85);
     --color-moon-dark:   oklch(0.35 0.02 85);    /* dark unlit side on dark dial */
     --color-moon-stroke: transparent;           /* no outline needed on dark dial */
+    --color-night:       oklch(0 0 0 / 0);       /* dark mode: night is default bg */
+    --color-daylight:    oklch(0.90 0.01 250 / 0.10); /* dark mode: day slightly lighter */
 
     --card-shadow:     0 1px 3px oklch(0 0 0 / 0.3),
                        0 4px 12px oklch(0 0 0 / 0.25);
@@ -272,6 +275,34 @@ header p {
   text-align: right;
 }
 
+/* ── Times card ───────────────────────────────────────────────────────── */
+.times-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.125rem;
+}
+
+.times-table td {
+  padding: 0.3rem 0.5rem;
+  white-space: nowrap;
+}
+
+.times-day {
+  color: var(--color-text-dim);
+  font-size: 1rem;
+  width: 2.5rem;
+}
+
+.times-time {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding-right: 0.75rem !important;
+}
+
+.times-label {
+  color: var(--color-text);
+}
+
 /* ── Duotone icon colors (light mode) ─────────────────────────────────── */
 .icon-sun              { --fa-primary-color: oklch(0.78 0.17 70);  --fa-secondary-color: oklch(0.85 0.14 80);  --fa-secondary-opacity: 0.7; }
 .icon-moon             { --fa-primary-color: oklch(0.72 0.08 250); --fa-secondary-color: oklch(0.80 0.06 260); --fa-secondary-opacity: 0.6; }
@@ -383,6 +414,14 @@ footer {
       <p class="status-msg">Loading wind data&hellip;</p>
     </div>
     <div class="wind-info" id="wind-info" hidden></div>
+  </div>
+
+  <!-- Times card -->
+  <div class="card" id="times-card">
+    <h2>Times</h2>
+    <div id="times-container">
+      <p class="status-msg">Loading events&hellip;</p>
+    </div>
   </div>
 
   <!-- Tide Graph card -->
@@ -999,6 +1038,37 @@ async function refreshForecast() {
   }
 }
 
+// ── Times Card ──────────────────────────────────────────────────────────
+
+/** Fetch upcoming events and render the Times table. */
+async function refreshTimes() {
+  try {
+    const res = await fetch('api/times');
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const { events } = await res.json();
+
+    const rows = events.map((e) => {
+      const d = new Date(e.time);
+      const day = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const time = d.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      }).toLowerCase();
+      return `<tr>
+        <td class="times-day">${day}</td>
+        <td class="times-time">${time}</td>
+        <td class="times-label">${e.label}</td>
+      </tr>`;
+    }).join('');
+
+    const container = document.getElementById('times-container');
+    container.innerHTML = `<table class="times-table">${rows}</table>`;
+  } catch (err) {
+    console.warn('Times refresh failed:', err);
+  }
+}
+
 // ── Tide Graph ──────────────────────────────────────────────────────────
 
 /**
@@ -1008,7 +1078,7 @@ async function refreshForecast() {
  * @param {{ time: string, v: string }[]}      measured   Measured water levels
  * @returns {SVGSVGElement}
  */
-function buildTideGraphSVG(curve, measured) {
+function buildTideGraphSVG(curve, measured, nauticalTimes) {
   const ns = 'http://www.w3.org/2000/svg';
 
   // ── Layout constants ──────────────────────────────────────────────────
@@ -1101,6 +1171,49 @@ function buildTideGraphSVG(curve, measured) {
       fill: 'var(--color-text-dim)',
       'font-size': '11',
     })).textContent = xLabels[i];
+  }
+
+  // ── Nautical daylight / night shading ─────────────────────────────────
+  // nauticalTimes: { dawn: "YYYY-MM-DDTHH:MM", dusk: "YYYY-MM-DDTHH:MM" }
+  // Dark mode: shade the daylight portion slightly lighter.
+  // Light mode: shade the night portions slightly darker.
+  if (nauticalTimes) {
+    const dawnMs = nauticalTimes.dawn ? new Date(nauticalTimes.dawn).getTime() : null;
+    const duskMs = nauticalTimes.dusk ? new Date(nauticalTimes.dusk).getTime() : null;
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (isDark && dawnMs && duskMs) {
+      // Dark mode: highlight the daylight band
+      const x1 = Math.max(xOf(dawnMs), ml);
+      const x2 = Math.min(xOf(duskMs), ml + plotW);
+      if (x2 > x1) {
+        svg.appendChild(el('rect', {
+          x: x1, y: mt, width: x2 - x1, height: plotH,
+          fill: 'var(--color-daylight)',
+        }));
+      }
+    } else if (!isDark) {
+      // Light mode: shade the night portions
+      if (dawnMs) {
+        const xDawn = Math.min(xOf(dawnMs), ml + plotW);
+        if (xDawn > ml) {
+          svg.appendChild(el('rect', {
+            x: ml, y: mt, width: xDawn - ml, height: plotH,
+            fill: 'var(--color-night)',
+          }));
+        }
+      }
+      if (duskMs) {
+        const xDusk = Math.max(xOf(duskMs), ml);
+        const xEnd = ml + plotW;
+        if (xDusk < xEnd) {
+          svg.appendChild(el('rect', {
+            x: xDusk, y: mt, width: xEnd - xDusk, height: plotH,
+            fill: 'var(--color-night)',
+          }));
+        }
+      }
+    }
   }
 
   // ── Plot border ───────────────────────────────────────────────────────
@@ -1198,14 +1311,20 @@ function buildTideGraphSVG(curve, measured) {
 async function refreshTideGraph() {
   try {
     console.log('[tide-graph] Refreshing…');
-    const res = await fetch('api/tide-curve');
-    if (!res.ok) throw new Error(`API error ${res.status}`);
-    const { curve, measured } = await res.json();
+    const [curveRes, daylightRes] = await Promise.all([
+      fetch('api/tide-curve'),
+      fetch('api/daylight'),
+    ]);
+    if (!curveRes.ok) throw new Error(`API error ${curveRes.status}`);
+    const { curve, measured } = await curveRes.json();
+
+    // Get today's nautical dawn/dusk for daylight shading
+    const nauticalTimes = daylightRes.ok ? await daylightRes.json() : null;
 
     console.log(`[tide-graph] ${curve.length} prediction pts, ${measured.length} measured pts`);
     const container = document.getElementById('tide-graph-container');
     container.innerHTML = '';
-    container.appendChild(buildTideGraphSVG(curve, measured));
+    container.appendChild(buildTideGraphSVG(curve, measured, nauticalTimes));
   } catch (err) {
     console.error('[tide-graph] Refresh failed:', err);
   }
@@ -1534,6 +1653,10 @@ async function init() {
   // ── 5-day forecast ────────────────────────────────────────────────
   await refreshForecast();
   setInterval(refreshForecast, 30 * 60_000);
+
+  // ── Times ──────────────────────────────────────────────────────────
+  await refreshTimes();
+  setInterval(refreshTimes, 5 * 60_000);
 
   // ── Tide graph ──────────────────────────────────────────────────────
   await refreshTideGraph();
