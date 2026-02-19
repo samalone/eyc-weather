@@ -156,7 +156,12 @@ app.get(bp('/api/times'), async (_req, res) => {
 
 /** Today's nautical dawn/dusk times (for tide graph daylight shading). */
 app.get(bp('/api/daylight'), (_req, res) => {
-  res.json(getDaylight());
+  try {
+    res.json(getDaylight());
+  } catch (err) {
+    console.error('[api] /api/daylight error:', err);
+    res.status(502).json({ error: 'Failed to compute daylight times' });
+  }
 });
 
 /** Current weather conditions from NWS (KPVD). */

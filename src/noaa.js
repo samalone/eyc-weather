@@ -5,6 +5,8 @@
  * purpose-built daily cache for hi/lo tide predictions (Pawtuxet Cove).
  */
 
+import { toLocalDate, toNoaaDate } from './dates.js';
+
 // ── Station IDs ─────────────────────────────────────────────────────────────
 
 /** Providence Visibility — wind, visibility, temp, pressure, humidity */
@@ -14,7 +16,7 @@ export const STATION_PROVIDENCE_VIS = '8453662';
 export const STATION_PROVIDENCE = '8454000';
 
 /** Pawtuxet Cove — tide predictions (closest to EYC) */
-export const STATION_PAWTUXET = '8453767';
+const STATION_PAWTUXET = '8453767';
 
 // ── API base ────────────────────────────────────────────────────────────────
 
@@ -58,7 +60,7 @@ export async function fetchNoaa(params) {
 // ── Tide prediction curve (Providence, daily cache) ────────────────────────
 
 let curveCache = {
-  /** ISO date string (YYYY-MM-DD) the cached data covers */
+  /** Eastern-local date string (YYYY-MM-DD) the cached data covers */
   date: null,
   /** @type {{ time: string, height: number }[]} */
   curve: [],
@@ -71,7 +73,7 @@ let curveCache = {
  * @returns {Promise<{ time: string, height: number }[]>}
  */
 export async function getTideCurve() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDate(new Date());
 
   if (curveCache.date === today && curveCache.curve.length) {
     return curveCache.curve;
@@ -84,8 +86,8 @@ export async function getTideCurve() {
   console.log(`[noaa] Fetching tide curve for ${today}`);
 
   const json = await fetchNoaa({
-    begin_date: yyyymmdd(now),
-    end_date: yyyymmdd(tomorrow),
+    begin_date: toNoaaDate(now),
+    end_date: toNoaaDate(tomorrow),
     station: STATION_PROVIDENCE,
     product: 'predictions',
     datum: 'MLLW',
@@ -96,9 +98,8 @@ export async function getTideCurve() {
   }
 
   // Filter to today only (the 2-day fetch may include some of tomorrow)
-  const todayPrefix = today;
   const curve = json.predictions
-    .filter((p) => p.t.startsWith(todayPrefix))
+    .filter((p) => p.t.startsWith(today))
     .map((p) => ({
       time: p.t.replace(' ', 'T'),
       height: parseFloat(p.v),
@@ -113,19 +114,11 @@ export async function getTideCurve() {
 // ── Tide predictions (daily cache) ──────────────────────────────────────────
 
 let predictionCache = {
-  /** ISO date string (YYYY-MM-DD) the cached data covers */
+  /** Eastern-local date string (YYYY-MM-DD) the cached data covers */
   date: null,
   /** @type {{ time: string, height: number, type: 'H'|'L' }[]} */
   predictions: [],
 };
-
-/** Format a Date as YYYYMMDD in local time. */
-function yyyymmdd(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}${m}${day}`;
-}
 
 /**
  * Return today's hi/lo tide predictions for Pawtuxet Cove, fetching from
@@ -134,7 +127,7 @@ function yyyymmdd(d) {
  * @returns {Promise<{ time: string, height: number, type: 'H'|'L' }[]>}
  */
 export async function getTidePredictions() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDate(new Date());
 
   if (predictionCache.date === today && predictionCache.predictions.length) {
     return predictionCache.predictions;
@@ -147,8 +140,8 @@ export async function getTidePredictions() {
   console.log(`[noaa] Fetching tide predictions for ${today}`);
 
   const json = await fetchNoaa({
-    begin_date: yyyymmdd(now),
-    end_date: yyyymmdd(tomorrow),
+    begin_date: toNoaaDate(now),
+    end_date: toNoaaDate(tomorrow),
     station: STATION_PAWTUXET,
     product: 'predictions',
     datum: 'MLLW',

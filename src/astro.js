@@ -7,42 +7,36 @@
  */
 
 import SunCalc from 'suncalc';
+import { toLocalIso, toLocalDate } from './dates.js';
 
 const EYC_LAT = 41.777;
 const EYC_LON = -71.3925;
-const TZ = 'America/New_York';
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Format a Date as "YYYY-MM-DDTHH:MM" in America/New_York,
- * matching the NOAA local-time timestamp format.
- */
-function toLocalIso(date) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(date);
-
-  const get = (type) => parts.find((p) => p.type === type)?.value;
-  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
-}
-
-/**
- * Return the current time as a local ISO string for comparison.
- */
-export function nowLocal() {
-  return toLocalIso(new Date());
-}
+// Re-export for callers that only need these from astro.js
+export { nowLocal } from './dates.js';
 
 // ── Cached daily computation ───────────────────────────────────────────────
 
 let astroCache = { date: null, events: [] };
+
+/**
+ * Return today's nautical dawn and dusk as Eastern-local ISO strings.
+ * Useful for marking daylight/night on the tide graph.
+ *
+ * @returns {{ dawn: string|null, dusk: string|null }}
+ */
+export function getDaylight() {
+  // Ensure the cache is populated
+  getAstroEvents();
+  const today = toLocalDate(new Date());
+  const dawn = astroCache.events.find(
+    (e) => e.label === 'Nautical dawn' && e.time.startsWith(today),
+  );
+  const dusk = astroCache.events.find(
+    (e) => e.label === 'Nautical dusk' && e.time.startsWith(today),
+  );
+  return { dawn: dawn?.time ?? null, dusk: dusk?.time ?? null };
+}
 
 /**
  * Return astronomical events (nautical dawn/dusk, moonrise/moonset) for
@@ -53,27 +47,8 @@ let astroCache = { date: null, events: [] };
  *
  * @returns {{ time: string, label: string }[]}
  */
-/**
- * Return today's nautical dawn and dusk as Eastern-local ISO strings.
- * Useful for marking daylight/night on the tide graph.
- *
- * @returns {{ dawn: string|null, dusk: string|null }}
- */
-export function getDaylight() {
-  // Ensure the cache is populated
-  getAstroEvents();
-  const today = toLocalIso(new Date()).slice(0, 10);
-  const dawn = astroCache.events.find(
-    (e) => e.label === 'Nautical dawn' && e.time.startsWith(today),
-  );
-  const dusk = astroCache.events.find(
-    (e) => e.label === 'Nautical dusk' && e.time.startsWith(today),
-  );
-  return { dawn: dawn?.time ?? null, dusk: dusk?.time ?? null };
-}
-
 export function getAstroEvents() {
-  const today = toLocalIso(new Date()).slice(0, 10);
+  const today = toLocalDate(new Date());
   if (astroCache.date === today && astroCache.events.length) {
     return astroCache.events;
   }

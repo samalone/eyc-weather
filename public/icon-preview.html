@@ -4,316 +4,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EYC Weather — Icon Color Preview</title>
-<link rel="stylesheet" href="/fonts/css/fontawesome.min.css">
-<link rel="stylesheet" href="/fonts/css/sharp-duotone-solid.min.css">
+<link rel="stylesheet" href="fonts/css/fontawesome.min.css">
+<link rel="stylesheet" href="fonts/css/sharp-duotone-solid.min.css">
+<link rel="stylesheet" href="icon-colors.css">
 <style>
 /* ══════════════════════════════════════════════════════════════════════════
-   ICON COLOR DEFINITIONS
+   DARK MODE OVERRIDES (class-based, for side-by-side preview)
    ──────────────────────────────────────────────────────────────────────────
-   Edit the --fa-* variables below to change icon colors.
-   Each .icon-* class sets colors for LIGHT mode.
-   Dark-mode overrides are in the @media block further down.
+   The light-mode .icon-* rules come from the shared icon-colors.css.
+   These .dark .icon-* overrides are needed because this page shows both
+   modes simultaneously via CSS classes instead of @media queries.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Clear / Fair ─────────────────────────────────────────────────────── */
-.icon-sun {
-  --fa-primary-color: oklch(0.78 0.17 70);     /* warm gold */
-  --fa-secondary-color: oklch(0.85 0.14 80);   /* lighter gold rays */
-  --fa-secondary-opacity: 0.7;
-}
-
-.icon-moon {
-  --fa-primary-color: oklch(0.72 0.08 250);    /* cool silver-blue */
-  --fa-secondary-color: oklch(0.80 0.06 260);  /* lighter silver */
-  --fa-secondary-opacity: 0.6;
-}
-
-.icon-sun-cloud {
-  --fa-primary-color: oklch(0.65 0.01 250);    /* gray cloud */
-  --fa-secondary-color: oklch(0.78 0.17 70);   /* gold sun */
-  --fa-secondary-opacity: 0.7;
-}
-
-.icon-moon-cloud {
-  --fa-primary-color: oklch(0.60 0.01 250);    /* gray cloud */
-  --fa-secondary-color: oklch(0.72 0.08 250);  /* silver moon */
-  --fa-secondary-opacity: 0.7;
-}
-
-/* ── Partly Cloudy ────────────────────────────────────────────────────── */
-.icon-cloud-sun {
-  --fa-primary-color: oklch(0.62 0.01 250);    /* gray cloud */
-  --fa-secondary-color: oklch(0.78 0.17 70);   /* gold sun */
-  --fa-secondary-opacity: 0.8;
-}
-
-.icon-cloud-moon {
-  --fa-primary-color: oklch(0.62 0.01 250);    /* gray cloud */
-  --fa-secondary-color: oklch(0.72 0.08 250);  /* silver moon */
-  --fa-secondary-opacity: 0.8;
-}
-
-.icon-cloud {
-  --fa-primary-color: oklch(0.60 0.01 250);    /* medium gray */
-  --fa-secondary-color: oklch(0.72 0.01 250);  /* lighter gray */
-  --fa-secondary-opacity: 0.6;
-}
-
-/* ── Rain ──────────────────────────────────────────────────────────────── */
-.icon-cloud-rain {
-  --fa-primary-color: oklch(0.55 0.02 250);    /* dark gray cloud */
-  --fa-secondary-color: oklch(0.60 0.14 250);  /* blue rain */
-  --fa-secondary-opacity: 0.8;
-}
-
-.icon-cloud-sun-rain {
-  --fa-primary-color: oklch(0.58 0.02 250);    /* gray cloud */
-  --fa-secondary-color: oklch(0.70 0.14 70);   /* golden sun + rain */
-  --fa-secondary-opacity: 0.8;
-}
-
-.icon-cloud-moon-rain {
-  --fa-primary-color: oklch(0.58 0.02 250);    /* gray cloud */
-  --fa-secondary-color: oklch(0.65 0.10 250);  /* blue moon + rain */
-  --fa-secondary-opacity: 0.8;
-}
-
-/* ── Snow / Ice ────────────────────────────────────────────────────────── */
-.icon-cloud-snow {
-  --fa-primary-color: oklch(0.55 0.02 250);    /* dark gray cloud */
-  --fa-secondary-color: oklch(0.75 0.08 230);  /* ice blue snow */
-  --fa-secondary-opacity: 0.8;
-}
-
-.icon-cloud-sleet {
-  --fa-primary-color: oklch(0.55 0.02 250);    /* dark gray cloud */
-  --fa-secondary-color: oklch(0.68 0.10 240);  /* blue-white sleet */
-  --fa-secondary-opacity: 0.8;
-}
-
-.icon-cloud-hail {
-  --fa-primary-color: oklch(0.55 0.02 250);    /* dark gray cloud */
-  --fa-secondary-color: oklch(0.70 0.08 230);  /* ice blue hail */
-  --fa-secondary-opacity: 0.8;
-}
-
-/* ── Thunderstorms ─────────────────────────────────────────────────────── */
-.icon-cloud-bolt {
-  --fa-primary-color: oklch(0.45 0.02 250);    /* dark cloud */
-  --fa-secondary-color: oklch(0.85 0.18 85);   /* yellow bolt */
-  --fa-secondary-opacity: 1;
-}
-
-.icon-cloud-bolt-sun {
-  --fa-primary-color: oklch(0.50 0.02 250);    /* dark cloud */
-  --fa-secondary-color: oklch(0.82 0.17 80);   /* yellow sun+bolt */
-  --fa-secondary-opacity: 0.9;
-}
-
-.icon-cloud-bolt-moon {
-  --fa-primary-color: oklch(0.50 0.02 250);    /* dark cloud */
-  --fa-secondary-color: oklch(0.80 0.16 85);   /* yellow bolt+moon */
-  --fa-secondary-opacity: 0.9;
-}
-
-/* ── Severe ────────────────────────────────────────────────────────────── */
-.icon-tornado {
-  --fa-primary-color: oklch(0.40 0.02 250);    /* very dark gray */
-  --fa-secondary-color: oklch(0.55 0.02 250);  /* medium gray */
-  --fa-secondary-opacity: 0.7;
-}
-
-.icon-hurricane {
-  --fa-primary-color: oklch(0.45 0.10 30);     /* warm dark red */
-  --fa-secondary-color: oklch(0.55 0.08 30);   /* lighter warm */
-  --fa-secondary-opacity: 0.7;
-}
-
-.icon-snow-blowing {
-  --fa-primary-color: oklch(0.78 0.06 230);    /* ice blue */
-  --fa-secondary-color: oklch(0.55 0.02 250);  /* gray */
-  --fa-secondary-opacity: 0.7;
-}
-
-/* ── Visibility ────────────────────────────────────────────────────────── */
-.icon-cloud-fog {
-  --fa-primary-color: oklch(0.60 0.01 250);    /* gray cloud */
-  --fa-secondary-color: oklch(0.72 0.01 250);  /* lighter fog */
-  --fa-secondary-opacity: 0.5;
-}
-
-.icon-smog {
-  --fa-primary-color: oklch(0.55 0.02 70);     /* warm gray */
-  --fa-secondary-color: oklch(0.65 0.02 70);   /* lighter warm gray */
-  --fa-secondary-opacity: 0.5;
-}
-
-.icon-sun-haze {
-  --fa-primary-color: oklch(0.65 0.02 70);     /* warm gray haze */
-  --fa-secondary-color: oklch(0.72 0.12 70);   /* hazy gold */
-  --fa-secondary-opacity: 0.5;
-}
-
-/* ── Temperature ───────────────────────────────────────────────────────── */
-.icon-temperature-hot {
-  --fa-primary-color: oklch(0.60 0.20 30);     /* red-orange */
-  --fa-secondary-color: oklch(0.72 0.16 40);   /* warm orange */
-  --fa-secondary-opacity: 0.7;
-}
-
-.icon-temperature-frigid {
-  --fa-primary-color: oklch(0.55 0.14 250);    /* cold blue */
-  --fa-secondary-color: oklch(0.72 0.10 230);  /* ice blue */
-  --fa-secondary-opacity: 0.7;
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   DARK MODE OVERRIDES
-   ══════════════════════════════════════════════════════════════════════════ */
-
-.dark .icon-sun {
-  --fa-primary-color: oklch(0.82 0.18 70);
-  --fa-secondary-color: oklch(0.88 0.14 80);
-  --fa-secondary-opacity: 0.7;
-}
-
-.dark .icon-moon {
-  --fa-primary-color: oklch(0.80 0.08 250);
-  --fa-secondary-color: oklch(0.85 0.06 260);
-  --fa-secondary-opacity: 0.6;
-}
-
-.dark .icon-sun-cloud {
-  --fa-primary-color: oklch(0.55 0.01 250);
-  --fa-secondary-color: oklch(0.82 0.18 70);
-  --fa-secondary-opacity: 0.7;
-}
-
-.dark .icon-moon-cloud {
-  --fa-primary-color: oklch(0.50 0.01 250);
-  --fa-secondary-color: oklch(0.80 0.08 250);
-  --fa-secondary-opacity: 0.7;
-}
-
-.dark .icon-cloud-sun {
-  --fa-primary-color: oklch(0.50 0.01 250);
-  --fa-secondary-color: oklch(0.82 0.18 70);
-  --fa-secondary-opacity: 0.8;
-}
-
-.dark .icon-cloud-moon {
-  --fa-primary-color: oklch(0.50 0.01 250);
-  --fa-secondary-color: oklch(0.80 0.08 250);
-  --fa-secondary-opacity: 0.8;
-}
-
-.dark .icon-cloud {
-  --fa-primary-color: oklch(0.50 0.01 250);
-  --fa-secondary-color: oklch(0.62 0.01 250);
-  --fa-secondary-opacity: 0.6;
-}
-
-.dark .icon-cloud-rain {
-  --fa-primary-color: oklch(0.45 0.02 250);
-  --fa-secondary-color: oklch(0.65 0.14 250);
-  --fa-secondary-opacity: 0.8;
-}
-
-.dark .icon-cloud-sun-rain {
-  --fa-primary-color: oklch(0.48 0.02 250);
-  --fa-secondary-color: oklch(0.75 0.14 70);
-  --fa-secondary-opacity: 0.8;
-}
-
-.dark .icon-cloud-moon-rain {
-  --fa-primary-color: oklch(0.48 0.02 250);
-  --fa-secondary-color: oklch(0.70 0.10 250);
-  --fa-secondary-opacity: 0.8;
-}
-
-.dark .icon-cloud-snow {
-  --fa-primary-color: oklch(0.45 0.02 250);
-  --fa-secondary-color: oklch(0.80 0.06 230);
-  --fa-secondary-opacity: 0.8;
-}
-
-.dark .icon-cloud-sleet {
-  --fa-primary-color: oklch(0.45 0.02 250);
-  --fa-secondary-color: oklch(0.72 0.08 240);
-  --fa-secondary-opacity: 0.8;
-}
-
-.dark .icon-cloud-hail {
-  --fa-primary-color: oklch(0.45 0.02 250);
-  --fa-secondary-color: oklch(0.75 0.06 230);
-  --fa-secondary-opacity: 0.8;
-}
-
-.dark .icon-cloud-bolt {
-  --fa-primary-color: oklch(0.35 0.02 250);
-  --fa-secondary-color: oklch(0.88 0.18 85);
-  --fa-secondary-opacity: 1;
-}
-
-.dark .icon-cloud-bolt-sun {
-  --fa-primary-color: oklch(0.40 0.02 250);
-  --fa-secondary-color: oklch(0.85 0.17 80);
-  --fa-secondary-opacity: 0.9;
-}
-
-.dark .icon-cloud-bolt-moon {
-  --fa-primary-color: oklch(0.40 0.02 250);
-  --fa-secondary-color: oklch(0.83 0.16 85);
-  --fa-secondary-opacity: 0.9;
-}
-
-.dark .icon-tornado {
-  --fa-primary-color: oklch(0.50 0.02 250);
-  --fa-secondary-color: oklch(0.65 0.02 250);
-  --fa-secondary-opacity: 0.7;
-}
-
-.dark .icon-hurricane {
-  --fa-primary-color: oklch(0.55 0.12 30);
-  --fa-secondary-color: oklch(0.65 0.10 30);
-  --fa-secondary-opacity: 0.7;
-}
-
-.dark .icon-snow-blowing {
-  --fa-primary-color: oklch(0.82 0.06 230);
-  --fa-secondary-color: oklch(0.60 0.02 250);
-  --fa-secondary-opacity: 0.7;
-}
-
-.dark .icon-cloud-fog {
-  --fa-primary-color: oklch(0.50 0.01 250);
-  --fa-secondary-color: oklch(0.62 0.01 250);
-  --fa-secondary-opacity: 0.5;
-}
-
-.dark .icon-smog {
-  --fa-primary-color: oklch(0.50 0.02 70);
-  --fa-secondary-color: oklch(0.60 0.02 70);
-  --fa-secondary-opacity: 0.5;
-}
-
-.dark .icon-sun-haze {
-  --fa-primary-color: oklch(0.55 0.02 70);
-  --fa-secondary-color: oklch(0.78 0.12 70);
-  --fa-secondary-opacity: 0.5;
-}
-
-.dark .icon-temperature-hot {
-  --fa-primary-color: oklch(0.65 0.20 30);
-  --fa-secondary-color: oklch(0.75 0.16 40);
-  --fa-secondary-opacity: 0.7;
-}
-
-.dark .icon-temperature-frigid {
-  --fa-primary-color: oklch(0.62 0.14 250);
-  --fa-secondary-color: oklch(0.78 0.10 230);
-  --fa-secondary-opacity: 0.7;
-}
+.dark .icon-sun              { --fa-primary-color: oklch(0.82 0.18 70);  --fa-secondary-color: oklch(0.88 0.14 80);  --fa-secondary-opacity: 0.7; }
+.dark .icon-moon             { --fa-primary-color: oklch(0.80 0.08 250); --fa-secondary-color: oklch(0.85 0.06 260); --fa-secondary-opacity: 0.6; }
+.dark .icon-sun-cloud        { --fa-primary-color: oklch(0.55 0.01 250); --fa-secondary-color: oklch(0.82 0.18 70);  --fa-secondary-opacity: 0.7; }
+.dark .icon-moon-cloud       { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.80 0.08 250); --fa-secondary-opacity: 0.7; }
+.dark .icon-cloud-sun        { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.82 0.18 70);  --fa-secondary-opacity: 0.8; }
+.dark .icon-cloud-moon       { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.80 0.08 250); --fa-secondary-opacity: 0.8; }
+.dark .icon-cloud            { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.62 0.01 250); --fa-secondary-opacity: 0.6; }
+.dark .icon-cloud-rain       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.65 0.14 250); --fa-secondary-opacity: 0.8; }
+.dark .icon-cloud-sun-rain   { --fa-primary-color: oklch(0.48 0.02 250); --fa-secondary-color: oklch(0.75 0.14 70);  --fa-secondary-opacity: 0.8; }
+.dark .icon-cloud-moon-rain  { --fa-primary-color: oklch(0.48 0.02 250); --fa-secondary-color: oklch(0.70 0.10 250); --fa-secondary-opacity: 0.8; }
+.dark .icon-cloud-snow       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.80 0.06 230); --fa-secondary-opacity: 0.8; }
+.dark .icon-cloud-sleet      { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.72 0.08 240); --fa-secondary-opacity: 0.8; }
+.dark .icon-cloud-hail       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.75 0.06 230); --fa-secondary-opacity: 0.8; }
+.dark .icon-cloud-bolt       { --fa-primary-color: oklch(0.35 0.02 250); --fa-secondary-color: oklch(0.88 0.18 85);  --fa-secondary-opacity: 1;   }
+.dark .icon-cloud-bolt-sun   { --fa-primary-color: oklch(0.40 0.02 250); --fa-secondary-color: oklch(0.85 0.17 80);  --fa-secondary-opacity: 0.9; }
+.dark .icon-cloud-bolt-moon  { --fa-primary-color: oklch(0.40 0.02 250); --fa-secondary-color: oklch(0.83 0.16 85);  --fa-secondary-opacity: 0.9; }
+.dark .icon-tornado          { --fa-primary-color: oklch(0.50 0.02 250); --fa-secondary-color: oklch(0.65 0.02 250); --fa-secondary-opacity: 0.7; }
+.dark .icon-hurricane        { --fa-primary-color: oklch(0.55 0.12 30);  --fa-secondary-color: oklch(0.65 0.10 30);  --fa-secondary-opacity: 0.7; }
+.dark .icon-snow-blowing     { --fa-primary-color: oklch(0.82 0.06 230); --fa-secondary-color: oklch(0.60 0.02 250); --fa-secondary-opacity: 0.7; }
+.dark .icon-cloud-fog        { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.62 0.01 250); --fa-secondary-opacity: 0.5; }
+.dark .icon-smog             { --fa-primary-color: oklch(0.50 0.02 70);  --fa-secondary-color: oklch(0.60 0.02 70);  --fa-secondary-opacity: 0.5; }
+.dark .icon-sun-haze         { --fa-primary-color: oklch(0.55 0.02 70);  --fa-secondary-color: oklch(0.78 0.12 70);  --fa-secondary-opacity: 0.5; }
+.dark .icon-temperature-hot  { --fa-primary-color: oklch(0.65 0.20 30);  --fa-secondary-color: oklch(0.75 0.16 40);  --fa-secondary-opacity: 0.7; }
+.dark .icon-temperature-frigid { --fa-primary-color: oklch(0.62 0.14 250); --fa-secondary-color: oklch(0.78 0.10 230); --fa-secondary-opacity: 0.7; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    PAGE LAYOUT

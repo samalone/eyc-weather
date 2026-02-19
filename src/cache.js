@@ -89,16 +89,6 @@ export class StationCache {
     }
   }
 
-  /** The NOAA station ID this cache covers. */
-  get stationId() {
-    return this.#stationId;
-  }
-
-  /** The product names this cache covers. */
-  get products() {
-    return [...this.#products];
-  }
-
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
   /**
@@ -158,18 +148,6 @@ export class StationCache {
       throw new Error(`Unknown product "${product}" for station ${this.#stationId}`);
     }
     return [...arr];
-  }
-
-  /**
-   * Return the most recent observation for a product, or null if empty.
-   *
-   * @param {string} product
-   * @returns {object | null}
-   */
-  getLatest(product) {
-    const arr = this.#data.get(product);
-    if (!arr?.length) return null;
-    return arr[arr.length - 1];
   }
 
   // ── Internal: fill & refresh ────────────────────────────────────────────

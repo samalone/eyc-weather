@@ -6,6 +6,7 @@
 <title>EYC Weather</title>
 <link rel="stylesheet" href="fonts/css/fontawesome.min.css">
 <link rel="stylesheet" href="fonts/css/sharp-duotone-solid.min.css">
+<link rel="stylesheet" href="icon-colors.css">
 <style>
 /* ── Reset & Base ──────────────────────────────────────────────────────── */
 *,
@@ -34,6 +35,8 @@
   --color-moon-stroke: var(--color-hand);     /* outline for contrast */
   --color-night:       oklch(0.20 0.02 250 / 0.08); /* light mode: night slightly darker */
   --color-daylight:    oklch(0 0 0 / 0);             /* light mode: day is default bg */
+  --wind-trail-l:      0.5;                          /* wind compass trail lightness */
+  --wind-trail-c:      0.15;                         /* wind compass trail chroma */
 
   --card-shadow:     0 1px 3px oklch(0 0 0 / 0.08),
                      0 4px 12px oklch(0 0 0 / 0.06);
@@ -58,6 +61,8 @@
     --color-moon-stroke: transparent;           /* no outline needed on dark dial */
     --color-night:       oklch(0 0 0 / 0);       /* dark mode: night is default bg */
     --color-daylight:    oklch(0.90 0.01 250 / 0.10); /* dark mode: day slightly lighter */
+    --wind-trail-l:      0.7;
+    --wind-trail-c:      0.18;
 
     --card-shadow:     0 1px 3px oklch(0 0 0 / 0.3),
                        0 4px 12px oklch(0 0 0 / 0.25);
@@ -310,91 +315,6 @@ header p {
   font-size: 1.1rem;
 }
 
-/* Times card icon colors — dawn/dusk, moon, tide */
-.times-icon-dawn {
-  --fa-primary-color: oklch(0.75 0.15 65);
-  --fa-secondary-color: oklch(0.82 0.13 75);
-  --fa-secondary-opacity: 0.7;
-}
-
-.times-icon-dusk {
-  --fa-primary-color: oklch(0.60 0.14 35);
-  --fa-secondary-color: oklch(0.70 0.12 50);
-  --fa-secondary-opacity: 0.7;
-}
-
-.times-icon-moon {
-  --fa-primary-color: oklch(0.58 0.10 250);
-  --fa-secondary-color: oklch(0.68 0.08 260);
-  --fa-secondary-opacity: 0.6;
-}
-
-.times-icon-tide {
-  --fa-primary-color: oklch(0.55 0.14 240);
-  --fa-secondary-color: oklch(0.65 0.12 250);
-  --fa-secondary-opacity: 0.7;
-}
-
-/* ── Duotone icon colors (light mode) ─────────────────────────────────── */
-.icon-sun              { --fa-primary-color: oklch(0.78 0.17 70);  --fa-secondary-color: oklch(0.85 0.14 80);  --fa-secondary-opacity: 0.7; }
-.icon-moon             { --fa-primary-color: oklch(0.72 0.08 250); --fa-secondary-color: oklch(0.80 0.06 260); --fa-secondary-opacity: 0.6; }
-.icon-sun-cloud        { --fa-primary-color: oklch(0.65 0.01 250); --fa-secondary-color: oklch(0.78 0.17 70);  --fa-secondary-opacity: 0.7; }
-.icon-moon-cloud       { --fa-primary-color: oklch(0.60 0.01 250); --fa-secondary-color: oklch(0.72 0.08 250); --fa-secondary-opacity: 0.7; }
-.icon-cloud-sun        { --fa-primary-color: oklch(0.62 0.01 250); --fa-secondary-color: oklch(0.78 0.17 70);  --fa-secondary-opacity: 0.8; }
-.icon-cloud-moon       { --fa-primary-color: oklch(0.62 0.01 250); --fa-secondary-color: oklch(0.72 0.08 250); --fa-secondary-opacity: 0.8; }
-.icon-cloud            { --fa-primary-color: oklch(0.60 0.01 250); --fa-secondary-color: oklch(0.72 0.01 250); --fa-secondary-opacity: 0.6; }
-.icon-cloud-rain       { --fa-primary-color: oklch(0.55 0.02 250); --fa-secondary-color: oklch(0.60 0.14 250); --fa-secondary-opacity: 0.8; }
-.icon-cloud-sun-rain   { --fa-primary-color: oklch(0.58 0.02 250); --fa-secondary-color: oklch(0.70 0.14 70);  --fa-secondary-opacity: 0.8; }
-.icon-cloud-moon-rain  { --fa-primary-color: oklch(0.58 0.02 250); --fa-secondary-color: oklch(0.65 0.10 250); --fa-secondary-opacity: 0.8; }
-.icon-cloud-snow       { --fa-primary-color: oklch(0.55 0.02 250); --fa-secondary-color: oklch(0.75 0.08 230); --fa-secondary-opacity: 0.8; }
-.icon-cloud-sleet      { --fa-primary-color: oklch(0.55 0.02 250); --fa-secondary-color: oklch(0.68 0.10 240); --fa-secondary-opacity: 0.8; }
-.icon-cloud-hail       { --fa-primary-color: oklch(0.55 0.02 250); --fa-secondary-color: oklch(0.70 0.08 230); --fa-secondary-opacity: 0.8; }
-.icon-cloud-bolt       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.85 0.18 85);  --fa-secondary-opacity: 1;   }
-.icon-cloud-bolt-sun   { --fa-primary-color: oklch(0.50 0.02 250); --fa-secondary-color: oklch(0.82 0.17 80);  --fa-secondary-opacity: 0.9; }
-.icon-cloud-bolt-moon  { --fa-primary-color: oklch(0.50 0.02 250); --fa-secondary-color: oklch(0.80 0.16 85);  --fa-secondary-opacity: 0.9; }
-.icon-tornado          { --fa-primary-color: oklch(0.40 0.02 250); --fa-secondary-color: oklch(0.55 0.02 250); --fa-secondary-opacity: 0.7; }
-.icon-hurricane        { --fa-primary-color: oklch(0.45 0.10 30);  --fa-secondary-color: oklch(0.55 0.08 30);  --fa-secondary-opacity: 0.7; }
-.icon-snow-blowing     { --fa-primary-color: oklch(0.78 0.06 230); --fa-secondary-color: oklch(0.55 0.02 250); --fa-secondary-opacity: 0.7; }
-.icon-cloud-fog        { --fa-primary-color: oklch(0.60 0.01 250); --fa-secondary-color: oklch(0.72 0.01 250); --fa-secondary-opacity: 0.5; }
-.icon-smog             { --fa-primary-color: oklch(0.55 0.02 70);  --fa-secondary-color: oklch(0.65 0.02 70);  --fa-secondary-opacity: 0.5; }
-.icon-sun-haze         { --fa-primary-color: oklch(0.65 0.02 70);  --fa-secondary-color: oklch(0.72 0.12 70);  --fa-secondary-opacity: 0.5; }
-.icon-temperature-hot  { --fa-primary-color: oklch(0.60 0.20 30);  --fa-secondary-color: oklch(0.72 0.16 40);  --fa-secondary-opacity: 0.7; }
-.icon-temperature-frigid { --fa-primary-color: oklch(0.55 0.14 250); --fa-secondary-color: oklch(0.72 0.10 230); --fa-secondary-opacity: 0.7; }
-
-/* ── Duotone icon colors (dark mode) ──────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  .icon-sun              { --fa-primary-color: oklch(0.82 0.18 70);  --fa-secondary-color: oklch(0.88 0.14 80);  --fa-secondary-opacity: 0.7; }
-  .icon-moon             { --fa-primary-color: oklch(0.80 0.08 250); --fa-secondary-color: oklch(0.85 0.06 260); --fa-secondary-opacity: 0.6; }
-  .icon-sun-cloud        { --fa-primary-color: oklch(0.55 0.01 250); --fa-secondary-color: oklch(0.82 0.18 70);  --fa-secondary-opacity: 0.7; }
-  .icon-moon-cloud       { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.80 0.08 250); --fa-secondary-opacity: 0.7; }
-  .icon-cloud-sun        { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.82 0.18 70);  --fa-secondary-opacity: 0.8; }
-  .icon-cloud-moon       { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.80 0.08 250); --fa-secondary-opacity: 0.8; }
-  .icon-cloud            { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.62 0.01 250); --fa-secondary-opacity: 0.6; }
-  .icon-cloud-rain       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.65 0.14 250); --fa-secondary-opacity: 0.8; }
-  .icon-cloud-sun-rain   { --fa-primary-color: oklch(0.48 0.02 250); --fa-secondary-color: oklch(0.75 0.14 70);  --fa-secondary-opacity: 0.8; }
-  .icon-cloud-moon-rain  { --fa-primary-color: oklch(0.48 0.02 250); --fa-secondary-color: oklch(0.70 0.10 250); --fa-secondary-opacity: 0.8; }
-  .icon-cloud-snow       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.80 0.06 230); --fa-secondary-opacity: 0.8; }
-  .icon-cloud-sleet      { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.72 0.08 240); --fa-secondary-opacity: 0.8; }
-  .icon-cloud-hail       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.75 0.06 230); --fa-secondary-opacity: 0.8; }
-  .icon-cloud-bolt       { --fa-primary-color: oklch(0.35 0.02 250); --fa-secondary-color: oklch(0.88 0.18 85);  --fa-secondary-opacity: 1;   }
-  .icon-cloud-bolt-sun   { --fa-primary-color: oklch(0.40 0.02 250); --fa-secondary-color: oklch(0.85 0.17 80);  --fa-secondary-opacity: 0.9; }
-  .icon-cloud-bolt-moon  { --fa-primary-color: oklch(0.40 0.02 250); --fa-secondary-color: oklch(0.83 0.16 85);  --fa-secondary-opacity: 0.9; }
-  .icon-tornado          { --fa-primary-color: oklch(0.50 0.02 250); --fa-secondary-color: oklch(0.65 0.02 250); --fa-secondary-opacity: 0.7; }
-  .icon-hurricane        { --fa-primary-color: oklch(0.55 0.12 30);  --fa-secondary-color: oklch(0.65 0.10 30);  --fa-secondary-opacity: 0.7; }
-  .icon-snow-blowing     { --fa-primary-color: oklch(0.82 0.06 230); --fa-secondary-color: oklch(0.60 0.02 250); --fa-secondary-opacity: 0.7; }
-  .icon-cloud-fog        { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.62 0.01 250); --fa-secondary-opacity: 0.5; }
-  .icon-smog             { --fa-primary-color: oklch(0.50 0.02 70);  --fa-secondary-color: oklch(0.60 0.02 70);  --fa-secondary-opacity: 0.5; }
-  .icon-sun-haze         { --fa-primary-color: oklch(0.55 0.02 70);  --fa-secondary-color: oklch(0.78 0.12 70);  --fa-secondary-opacity: 0.5; }
-  .icon-temperature-hot  { --fa-primary-color: oklch(0.65 0.20 30);  --fa-secondary-color: oklch(0.75 0.16 40);  --fa-secondary-opacity: 0.7; }
-  .icon-temperature-frigid { --fa-primary-color: oklch(0.62 0.14 250); --fa-secondary-color: oklch(0.78 0.10 230); --fa-secondary-opacity: 0.7; }
-
-  /* Times card icons — dark mode */
-  .times-icon-dawn { --fa-primary-color: oklch(0.80 0.16 65);  --fa-secondary-color: oklch(0.86 0.13 75);  --fa-secondary-opacity: 0.7; }
-  .times-icon-dusk { --fa-primary-color: oklch(0.68 0.14 35);  --fa-secondary-color: oklch(0.76 0.12 50);  --fa-secondary-opacity: 0.7; }
-  .times-icon-moon { --fa-primary-color: oklch(0.80 0.08 250); --fa-secondary-color: oklch(0.85 0.06 260); --fa-secondary-opacity: 0.6; }
-  .times-icon-tide { --fa-primary-color: oklch(0.62 0.14 240); --fa-secondary-color: oklch(0.72 0.12 250); --fa-secondary-opacity: 0.7; }
-}
-
 /* ── Footer ───────────────────────────────────────────────────────────── */
 footer {
   margin-top: 0.5rem;
@@ -474,6 +394,28 @@ footer {
 <footer id="version"></footer>
 
 <script>
+// ── Shared SVG helpers ──────────────────────────────────────────────────
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Create an SVG element with the given attributes. */
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+/**
+ * Create a polar-to-cartesian converter for a given center.
+ * Returns { x, y } from an angle in degrees (0° = 12 o'clock, CW).
+ */
+function makePolar(cx, cy) {
+  return (angleDeg, r) => ({
+    x: cx + r * Math.sin(angleDeg * Math.PI / 180),
+    y: cy - r * Math.cos(angleDeg * Math.PI / 180),
+  });
+}
+
 // ── Tide Clock ──────────────────────────────────────────────────────────
 
 /** Fetch hi/lo predictions from our backend. */
@@ -537,7 +479,6 @@ function tideAngle(prev, next, now) {
 // ── SVG clock face builder ──────────────────────────────────────────────
 
 function buildClockSVG() {
-  const ns = 'http://www.w3.org/2000/svg';
   const size = 320;
   const cx = size / 2;
   const cy = size / 2;
@@ -551,22 +492,12 @@ function buildClockSVG() {
   const labelR = 52;           // RISING / FALLING text (inner area)
   const handTipR = 90;         // hand tip — moon (r=10) rides inside numbers
 
-  const svg = document.createElementNS(ns, 'svg');
+  const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
   svg.classList.add('tide-clock-svg');
 
-  // Helper: polar to cartesian (0° = 12 o'clock, CW positive)
-  const polar = (angle, r) => ({
-    x: cx + r * Math.sin(angle * Math.PI / 180),
-    y: cy - r * Math.cos(angle * Math.PI / 180),
-  });
-
-  // Helper: create SVG element with attributes
-  const el = (tag, attrs) => {
-    const e = document.createElementNS(ns, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-    return e;
-  };
+  const polar = makePolar(cx, cy);
+  const el = svgEl;
 
   // --- Dial background ---
   svg.appendChild(el('circle', {
@@ -1138,8 +1069,6 @@ async function refreshTimes() {
  * @returns {SVGSVGElement}
  */
 function buildTideGraphSVG(curve, measured, nauticalTimes) {
-  const ns = 'http://www.w3.org/2000/svg';
-
   // ── Layout constants ──────────────────────────────────────────────────
   const W = 800, H = 400;
   const ml = 45, mr = 10, mt = 25, mb = 30;   // margins
@@ -1166,14 +1095,9 @@ function buildTideGraphSVG(curve, measured, nauticalTimes) {
 
   const yOf = (h) => mt + plotH - ((h - hMin) / (hMax - hMin)) * plotH;
 
-  // ── Helpers ───────────────────────────────────────────────────────────
-  const el = (tag, attrs) => {
-    const e = document.createElementNS(ns, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-    return e;
-  };
+  const el = svgEl;
 
-  const svg = document.createElementNS(ns, 'svg');
+  const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.classList.add('tide-graph-svg');
 
@@ -1464,7 +1388,6 @@ async function fetchAllWind() {
  *   speed, gust, dir (degrees), hue (oklch hue angle).
  */
 function buildCompassSVG(observations) {
-  const ns = 'http://www.w3.org/2000/svg';
   const size = 320;
   const cx = size / 2;
   const cy = size / 2;
@@ -1473,21 +1396,12 @@ function buildCompassSVG(observations) {
   const labelR = 140;      // direction labels
   const ringLabelR = 6;    // offset for speed ring numbers from ring
 
-  const svg = document.createElementNS(ns, 'svg');
+  const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
   svg.classList.add('wind-compass-svg');
 
-  // Helpers (same pattern as tide clock)
-  const polar = (angleDeg, r) => ({
-    x: cx + r * Math.sin(angleDeg * Math.PI / 180),
-    y: cy - r * Math.cos(angleDeg * Math.PI / 180),
-  });
-
-  const el = (tag, attrs) => {
-    const e = document.createElementNS(ns, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-    return e;
-  };
+  const polar = makePolar(cx, cy);
+  const el = svgEl;
 
   const textStyle = {
     'text-anchor': 'middle',
@@ -1588,14 +1502,15 @@ function buildCompassSVG(observations) {
   }
 
   // ── Wind segments (oldest first → newest on top) ──────────────────────
+  // Colors use CSS custom properties (--wind-trail-l, --wind-trail-c) so
+  // they update live when switching between light and dark mode.  We use
+  // inline `style` instead of SVG `stroke`/`fill` attributes because
+  // presentation attributes don't resolve var() inside oklch().
   const count = observations.length;
-  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
   for (let i = 0; i < count; i++) {
     const obs = observations[i];
     const alpha = count === 1 ? 1 : 0.2 + 0.8 * (i / (count - 1));
-    const lightness = isDark ? 0.7 : 0.5;
-    const chroma = isDark ? 0.18 : 0.15;
 
     const speedR = (obs.speed / maxRing) * plotR;
     const gustR = (obs.gust / maxRing) * plotR;
@@ -1603,20 +1518,20 @@ function buildCompassSVG(observations) {
     const p1 = polar(obs.dir, speedR);
     const p2 = polar(obs.dir, gustR);
 
-    svg.appendChild(el('line', {
+    const line = el('line', {
       x1: p1.x, y1: p1.y,
       x2: p2.x, y2: p2.y,
-      stroke: `oklch(${lightness} ${chroma} ${obs.hue} / ${alpha.toFixed(2)})`,
       'stroke-width': '3',
       'stroke-linecap': 'round',
-    }));
+    });
+    line.style.stroke = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${obs.hue} / ${alpha.toFixed(2)})`;
+    svg.appendChild(line);
 
     // Small dot at the gust end of the newest observation
     if (i === count - 1) {
-      svg.appendChild(el('circle', {
-        cx: p2.x, cy: p2.y, r: 4,
-        fill: `oklch(${lightness} ${chroma} ${obs.hue})`,
-      }));
+      const dot = el('circle', { cx: p2.x, cy: p2.y, r: 4 });
+      dot.style.fill = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${obs.hue})`;
+      svg.appendChild(dot);
     }
   }
 
@@ -1709,34 +1624,26 @@ async function init() {
     console.error('Tide init error:', err);
   }
 
-  // ── Current conditions ──────────────────────────────────────────────
-  await refreshConditions();
+  // ── Remaining cards — fetch in parallel, start intervals after ────────
+  await Promise.allSettled([
+    refreshConditions(),
+    refreshForecast(),
+    refreshTimes(),
+    refreshTideGraph(),
+    refreshWind(),
+    fetch('api/version').then(async (r) => {
+      if (r.ok) {
+        const { version } = await r.json();
+        document.getElementById('version').textContent = `v${version}`;
+      }
+    }),
+  ]);
+
   setInterval(refreshConditions, 60_000);
-
-  // ── 5-day forecast ────────────────────────────────────────────────
-  await refreshForecast();
   setInterval(refreshForecast, 30 * 60_000);
-
-  // ── Times ──────────────────────────────────────────────────────────
-  await refreshTimes();
   setInterval(refreshTimes, 5 * 60_000);
-
-  // ── Tide graph ──────────────────────────────────────────────────────
-  await refreshTideGraph();
   setInterval(refreshTideGraph, 5 * 60_000);
-
-  // ── Wind compass ────────────────────────────────────────────────────
-  await refreshWind();
   setInterval(refreshWind, 60_000);
-
-  // ── Version footer ─────────────────────────────────────────────────
-  try {
-    const vRes = await fetch('api/version');
-    if (vRes.ok) {
-      const { version } = await vRes.json();
-      document.getElementById('version').textContent = `v${version}`;
-    }
-  } catch (_) { /* non-critical */ }
 }
 
 init();
