@@ -170,9 +170,23 @@ header p {
 }
 
 /* ── Current Conditions card ──────────────────────────────────────────── */
+#conditions-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .conditions-icon {
-  font-size: 4rem;
-  color: var(--color-accent);
+  font-size: 12rem;
+  line-height: 1;
+  margin-top: 0.5rem;
+}
+
+.conditions-temps {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
   line-height: 1;
 }
 
@@ -184,9 +198,10 @@ header p {
 }
 
 .conditions-feels {
-  font-size: 0.9rem;
+  font-size: 3.2rem;
+  font-weight: 700;
+  line-height: 1;
   color: var(--color-text-dim);
-  margin-top: 0.1rem;
 }
 
 .conditions-desc {
@@ -194,6 +209,60 @@ header p {
   font-weight: 500;
   color: var(--color-text);
   text-align: center;
+}
+
+/* ── Duotone icon colors (light mode) ─────────────────────────────────── */
+.icon-sun              { --fa-primary-color: oklch(0.78 0.17 70);  --fa-secondary-color: oklch(0.85 0.14 80);  --fa-secondary-opacity: 0.7; }
+.icon-moon             { --fa-primary-color: oklch(0.72 0.08 250); --fa-secondary-color: oklch(0.80 0.06 260); --fa-secondary-opacity: 0.6; }
+.icon-sun-cloud        { --fa-primary-color: oklch(0.65 0.01 250); --fa-secondary-color: oklch(0.78 0.17 70);  --fa-secondary-opacity: 0.7; }
+.icon-moon-cloud       { --fa-primary-color: oklch(0.60 0.01 250); --fa-secondary-color: oklch(0.72 0.08 250); --fa-secondary-opacity: 0.7; }
+.icon-cloud-sun        { --fa-primary-color: oklch(0.62 0.01 250); --fa-secondary-color: oklch(0.78 0.17 70);  --fa-secondary-opacity: 0.8; }
+.icon-cloud-moon       { --fa-primary-color: oklch(0.62 0.01 250); --fa-secondary-color: oklch(0.72 0.08 250); --fa-secondary-opacity: 0.8; }
+.icon-cloud            { --fa-primary-color: oklch(0.60 0.01 250); --fa-secondary-color: oklch(0.72 0.01 250); --fa-secondary-opacity: 0.6; }
+.icon-cloud-rain       { --fa-primary-color: oklch(0.55 0.02 250); --fa-secondary-color: oklch(0.60 0.14 250); --fa-secondary-opacity: 0.8; }
+.icon-cloud-sun-rain   { --fa-primary-color: oklch(0.58 0.02 250); --fa-secondary-color: oklch(0.70 0.14 70);  --fa-secondary-opacity: 0.8; }
+.icon-cloud-moon-rain  { --fa-primary-color: oklch(0.58 0.02 250); --fa-secondary-color: oklch(0.65 0.10 250); --fa-secondary-opacity: 0.8; }
+.icon-cloud-snow       { --fa-primary-color: oklch(0.55 0.02 250); --fa-secondary-color: oklch(0.75 0.08 230); --fa-secondary-opacity: 0.8; }
+.icon-cloud-sleet      { --fa-primary-color: oklch(0.55 0.02 250); --fa-secondary-color: oklch(0.68 0.10 240); --fa-secondary-opacity: 0.8; }
+.icon-cloud-hail       { --fa-primary-color: oklch(0.55 0.02 250); --fa-secondary-color: oklch(0.70 0.08 230); --fa-secondary-opacity: 0.8; }
+.icon-cloud-bolt       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.85 0.18 85);  --fa-secondary-opacity: 1;   }
+.icon-cloud-bolt-sun   { --fa-primary-color: oklch(0.50 0.02 250); --fa-secondary-color: oklch(0.82 0.17 80);  --fa-secondary-opacity: 0.9; }
+.icon-cloud-bolt-moon  { --fa-primary-color: oklch(0.50 0.02 250); --fa-secondary-color: oklch(0.80 0.16 85);  --fa-secondary-opacity: 0.9; }
+.icon-tornado          { --fa-primary-color: oklch(0.40 0.02 250); --fa-secondary-color: oklch(0.55 0.02 250); --fa-secondary-opacity: 0.7; }
+.icon-hurricane        { --fa-primary-color: oklch(0.45 0.10 30);  --fa-secondary-color: oklch(0.55 0.08 30);  --fa-secondary-opacity: 0.7; }
+.icon-snow-blowing     { --fa-primary-color: oklch(0.78 0.06 230); --fa-secondary-color: oklch(0.55 0.02 250); --fa-secondary-opacity: 0.7; }
+.icon-cloud-fog        { --fa-primary-color: oklch(0.60 0.01 250); --fa-secondary-color: oklch(0.72 0.01 250); --fa-secondary-opacity: 0.5; }
+.icon-smog             { --fa-primary-color: oklch(0.55 0.02 70);  --fa-secondary-color: oklch(0.65 0.02 70);  --fa-secondary-opacity: 0.5; }
+.icon-sun-haze         { --fa-primary-color: oklch(0.65 0.02 70);  --fa-secondary-color: oklch(0.72 0.12 70);  --fa-secondary-opacity: 0.5; }
+.icon-temperature-hot  { --fa-primary-color: oklch(0.60 0.20 30);  --fa-secondary-color: oklch(0.72 0.16 40);  --fa-secondary-opacity: 0.7; }
+.icon-temperature-frigid { --fa-primary-color: oklch(0.55 0.14 250); --fa-secondary-color: oklch(0.72 0.10 230); --fa-secondary-opacity: 0.7; }
+
+/* ── Duotone icon colors (dark mode) ──────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  .icon-sun              { --fa-primary-color: oklch(0.82 0.18 70);  --fa-secondary-color: oklch(0.88 0.14 80);  --fa-secondary-opacity: 0.7; }
+  .icon-moon             { --fa-primary-color: oklch(0.80 0.08 250); --fa-secondary-color: oklch(0.85 0.06 260); --fa-secondary-opacity: 0.6; }
+  .icon-sun-cloud        { --fa-primary-color: oklch(0.55 0.01 250); --fa-secondary-color: oklch(0.82 0.18 70);  --fa-secondary-opacity: 0.7; }
+  .icon-moon-cloud       { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.80 0.08 250); --fa-secondary-opacity: 0.7; }
+  .icon-cloud-sun        { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.82 0.18 70);  --fa-secondary-opacity: 0.8; }
+  .icon-cloud-moon       { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.80 0.08 250); --fa-secondary-opacity: 0.8; }
+  .icon-cloud            { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.62 0.01 250); --fa-secondary-opacity: 0.6; }
+  .icon-cloud-rain       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.65 0.14 250); --fa-secondary-opacity: 0.8; }
+  .icon-cloud-sun-rain   { --fa-primary-color: oklch(0.48 0.02 250); --fa-secondary-color: oklch(0.75 0.14 70);  --fa-secondary-opacity: 0.8; }
+  .icon-cloud-moon-rain  { --fa-primary-color: oklch(0.48 0.02 250); --fa-secondary-color: oklch(0.70 0.10 250); --fa-secondary-opacity: 0.8; }
+  .icon-cloud-snow       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.80 0.06 230); --fa-secondary-opacity: 0.8; }
+  .icon-cloud-sleet      { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.72 0.08 240); --fa-secondary-opacity: 0.8; }
+  .icon-cloud-hail       { --fa-primary-color: oklch(0.45 0.02 250); --fa-secondary-color: oklch(0.75 0.06 230); --fa-secondary-opacity: 0.8; }
+  .icon-cloud-bolt       { --fa-primary-color: oklch(0.35 0.02 250); --fa-secondary-color: oklch(0.88 0.18 85);  --fa-secondary-opacity: 1;   }
+  .icon-cloud-bolt-sun   { --fa-primary-color: oklch(0.40 0.02 250); --fa-secondary-color: oklch(0.85 0.17 80);  --fa-secondary-opacity: 0.9; }
+  .icon-cloud-bolt-moon  { --fa-primary-color: oklch(0.40 0.02 250); --fa-secondary-color: oklch(0.83 0.16 85);  --fa-secondary-opacity: 0.9; }
+  .icon-tornado          { --fa-primary-color: oklch(0.50 0.02 250); --fa-secondary-color: oklch(0.65 0.02 250); --fa-secondary-opacity: 0.7; }
+  .icon-hurricane        { --fa-primary-color: oklch(0.55 0.12 30);  --fa-secondary-color: oklch(0.65 0.10 30);  --fa-secondary-opacity: 0.7; }
+  .icon-snow-blowing     { --fa-primary-color: oklch(0.82 0.06 230); --fa-secondary-color: oklch(0.60 0.02 250); --fa-secondary-opacity: 0.7; }
+  .icon-cloud-fog        { --fa-primary-color: oklch(0.50 0.01 250); --fa-secondary-color: oklch(0.62 0.01 250); --fa-secondary-opacity: 0.5; }
+  .icon-smog             { --fa-primary-color: oklch(0.50 0.02 70);  --fa-secondary-color: oklch(0.60 0.02 70);  --fa-secondary-opacity: 0.5; }
+  .icon-sun-haze         { --fa-primary-color: oklch(0.55 0.02 70);  --fa-secondary-color: oklch(0.78 0.12 70);  --fa-secondary-opacity: 0.5; }
+  .icon-temperature-hot  { --fa-primary-color: oklch(0.65 0.20 30);  --fa-secondary-color: oklch(0.75 0.16 40);  --fa-secondary-opacity: 0.7; }
+  .icon-temperature-frigid { --fa-primary-color: oklch(0.62 0.14 250); --fa-secondary-color: oklch(0.78 0.10 230); --fa-secondary-opacity: 0.7; }
 }
 
 /* ── Loading / error states ────────────────────────────────────────────── */
@@ -682,20 +751,23 @@ async function refreshConditions() {
     if (!container) return;
 
     const iconClass = conditionToIcon(data.condition, data.timeOfDay);
+    const colorClass = 'icon-' + iconClass.replace('fa-', '');
     const tempStr = data.temperature != null
       ? `${Math.round(data.temperature)}°`
       : '\u2014';
     const feelsStr = data.feelsLike != null
-      ? `Feels like ${Math.round(data.feelsLike)}°`
+      ? `(${Math.round(data.feelsLike)}°)`
       : '';
     const descStr = data.textDescription || '';
 
     container.innerHTML = `
-      <div class="conditions-icon">
+      <div class="conditions-icon ${colorClass}">
         <i class="fa-sharp-duotone fa-solid ${iconClass}"></i>
       </div>
-      <div class="conditions-temp">${tempStr}</div>
-      <div class="conditions-feels">${feelsStr}</div>
+      <div class="conditions-temps">
+        <span class="conditions-temp">${tempStr}</span>
+        <span class="conditions-feels">${feelsStr}</span>
+      </div>
       <div class="conditions-desc">${descStr}</div>
     `;
   } catch (err) {
