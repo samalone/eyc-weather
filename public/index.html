@@ -649,7 +649,7 @@ function buildClockSVG() {
   svg.appendChild(levelUnit);
 
   // --- Hand (rotated dynamically) ---
-  const handGroup = document.createElementNS(ns, 'g');
+  const handGroup = document.createElementNS(SVG_NS,'g');
   handGroup.setAttribute('id', 'tide-hand');
   handGroup.style.transformOrigin = `${cx}px ${cy}px`;
   handGroup.style.transition = 'transform 1s ease-in-out';
@@ -675,7 +675,7 @@ function buildClockSVG() {
   }));
 
   // Moon phase disc at tip of hand (counter-rotated to stay upright)
-  const moonGroup = document.createElementNS(ns, 'g');
+  const moonGroup = document.createElementNS(SVG_NS,'g');
   moonGroup.setAttribute('id', 'moon-group');
   moonGroup.style.transformOrigin = `${cx}px ${moonCY}px`;
   moonGroup.style.transition = 'transform 1s ease-in-out';
