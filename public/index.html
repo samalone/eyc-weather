@@ -29,6 +29,8 @@
   --color-hand:      oklch(0.30 0.05 250);
   --color-dial:      oklch(0.94 0.005 250);
   --color-tick:      oklch(0.50 0.02 250);
+  --color-moon-lit:    oklch(0.92 0.03 85);    /* warm white */
+  --color-moon-stroke: var(--color-hand);     /* outline for contrast */
 
   --card-shadow:     0 1px 3px oklch(0 0 0 / 0.08),
                      0 4px 12px oklch(0 0 0 / 0.06);
@@ -48,6 +50,8 @@
     --color-hand:      oklch(0.90 0.03 60);
     --color-dial:      oklch(0.18 0.01 250);
     --color-tick:      oklch(0.55 0.015 250);
+    --color-moon-lit:    oklch(0.88 0.04 85);
+    --color-moon-stroke: transparent;           /* no outline needed on dark dial */
 
     --card-shadow:     0 1px 3px oklch(0 0 0 / 0.3),
                        0 4px 12px oklch(0 0 0 / 0.25);
@@ -171,16 +175,17 @@ header p {
 
 /* ── Current Conditions card ──────────────────────────────────────────── */
 #conditions-content {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.75rem;
 }
 
 .conditions-icon {
   font-size: 12rem;
   line-height: 1;
-  margin-top: 0.5rem;
 }
 
 .conditions-temps {
@@ -278,7 +283,7 @@ header p {
 
 <header>
   <h1>Edgewood Yacht Club</h1>
-  <p>Cranston, RI &mdash; Pawtuxet Cove</p>
+  <p>Cranston, RI &mdash; 41.7770&deg;N 71.3925&deg;W</p>
 </header>
 
 <div class="dashboard">
@@ -382,10 +387,10 @@ function buildClockSVG() {
   const tickOuterR = 130;      // ticks start inside the arc band
   const tickInnerMajor = 115;
   const tickInnerMinor = 121;
-  const numberR = 98;          // hour numbers
+  const numberR = 108;         // hour numbers (near tick marks)
   const hiloLabelR = 120;      // HIGH / LOW text (between ticks and numbers)
   const labelR = 52;           // RISING / FALLING text (inner area)
-  const handTipR = 108;        // hand reaches just short of numbers
+  const handTipR = 90;         // hand tip — moon (r=10) rides inside numbers
 
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
@@ -568,21 +573,46 @@ function buildClockSVG() {
     'stroke-linecap': 'round',
   }));
 
-  // Shaft
+  // Shaft (ends at the moon circle edge)
+  const moonR = 10;
+  const moonCY = cy - handTipR;
   handGroup.appendChild(el('line', {
     x1: cx, y1: cy,
-    x2: cx, y2: cy - handTipR + 8,
+    x2: cx, y2: moonCY + moonR,
     stroke: 'var(--color-hand)',
     'stroke-width': '3',
     'stroke-linecap': 'round',
   }));
 
-  // Arrow tip
-  const tipY = cy - handTipR;
-  handGroup.appendChild(el('polygon', {
-    points: `${cx},${tipY} ${cx - 5.5},${tipY + 12} ${cx + 5.5},${tipY + 12}`,
-    fill: 'var(--color-hand)',
+  // Moon phase disc at tip of hand (counter-rotated to stay upright)
+  const moonGroup = document.createElementNS(ns, 'g');
+  moonGroup.setAttribute('id', 'moon-group');
+  moonGroup.style.transformOrigin = `${cx}px ${moonCY}px`;
+  moonGroup.style.transition = 'transform 1s ease-in-out';
+
+  // Base circle at 50% opacity (dark/unlit portion visible as translucent)
+  moonGroup.appendChild(el('circle', {
+    cx, cy: moonCY, r: moonR,
+    fill: 'var(--color-moon-lit)',
+    opacity: '0.5',
   }));
+
+  // Lit portion at full opacity (path updated dynamically)
+  moonGroup.appendChild(el('path', {
+    id: 'moon-phase-path',
+    d: '',
+    fill: 'var(--color-moon-lit)',
+  }));
+
+  // Thin outline for contrast (visible in light mode, transparent in dark)
+  moonGroup.appendChild(el('circle', {
+    cx, cy: moonCY, r: moonR,
+    fill: 'none',
+    stroke: 'var(--color-moon-stroke)',
+    'stroke-width': '1',
+  }));
+
+  handGroup.appendChild(moonGroup);
 
   svg.appendChild(handGroup);
 
@@ -631,6 +661,10 @@ function updateClock() {
 
   hand.style.transform = `rotate(${currentHandAngle}deg)`;
 
+  // Counter-rotate the moon so it stays upright
+  const moonG = document.getElementById('moon-group');
+  if (moonG) moonG.style.transform = `rotate(${-currentHandAngle}deg)`;
+
   // Update info text
   const infoEl = document.getElementById('tide-info');
   if (infoEl) {
@@ -674,6 +708,79 @@ async function refreshWaterLevel() {
   } catch (err) {
     console.warn('Water level refresh failed:', err);
   }
+}
+
+// ── Moon Phase ──────────────────────────────────────────────────────────
+
+/**
+ * Calculate the moon phase for a given date.
+ * Uses a known new-moon reference and the synodic month constant.
+ * @param {Date} date
+ * @returns {number} 0–1 where 0 = new moon, 0.5 = full moon
+ */
+function moonPhase(date = new Date()) {
+  const knownNewMoon = Date.UTC(2000, 0, 6, 18, 14); // Jan 6 2000, 18:14 UTC
+  const synodicMonth = 29.530588853 * 86400000;       // ms
+  const elapsed = date.getTime() - knownNewMoon;
+  const phase = (elapsed % synodicMonth) / synodicMonth;
+  return phase < 0 ? phase + 1 : phase;
+}
+
+/**
+ * Build an SVG path `d` string for the illuminated portion of the moon.
+ * Northern Hemisphere convention: right side lights up first (waxing).
+ *
+ * @param {number} phase  0–1 (0 = new, 0.5 = full)
+ * @param {number} mx     center x
+ * @param {number} my     center y
+ * @param {number} r      radius
+ * @returns {string} SVG path d attribute
+ */
+function moonPhasePath(phase, mx, my, r) {
+  // Terminator curvature: +1 at new, 0 at quarters, −1 at full
+  const sweep = Math.cos(phase * 2 * Math.PI);
+  const rx = Math.abs(sweep) * r;
+
+  const top = `${mx} ${my - r}`;
+  const bot = `${mx} ${my + r}`;
+
+  if (phase <= 0) {
+    // New moon — entirely dark
+    return '';
+  }
+  if (phase >= 1) {
+    // Also new moon (cycle wrap)
+    return '';
+  }
+  if (Math.abs(phase - 0.5) < 0.001) {
+    // Full moon — full circle
+    return `M ${mx} ${my - r} A ${r} ${r} 0 1 0 ${mx} ${my + r} A ${r} ${r} 0 1 0 ${mx} ${my - r}`;
+  }
+
+  if (phase < 0.25) {
+    // Waxing crescent: small right-side lit
+    return `M ${top} A ${r} ${r} 0 0 1 ${bot} A ${rx} ${r} 0 0 1 ${top}`;
+  } else if (phase < 0.5) {
+    // Waxing gibbous: large right-side lit
+    return `M ${top} A ${r} ${r} 0 0 1 ${bot} A ${rx} ${r} 0 0 0 ${top}`;
+  } else if (phase < 0.75) {
+    // Waning gibbous: large left-side lit
+    return `M ${top} A ${r} ${r} 0 0 0 ${bot} A ${rx} ${r} 0 0 1 ${top}`;
+  } else {
+    // Waning crescent: small left-side lit
+    return `M ${top} A ${r} ${r} 0 0 0 ${bot} A ${rx} ${r} 0 0 0 ${top}`;
+  }
+}
+
+/** Update the moon phase disc on the tide clock hand. */
+function updateMoonPhase() {
+  const pathEl = document.getElementById('moon-phase-path');
+  if (!pathEl) return;
+
+  const phase = moonPhase();
+  // Moon center is at (cx, cy - handTipR) in clock coordinates = (160, 70)
+  const d = moonPhasePath(phase, 160, 70, 10);
+  pathEl.setAttribute('d', d);
 }
 
 // ── Current Conditions ──────────────────────────────────────────────────
@@ -890,9 +997,9 @@ function buildCompassSVG(observations) {
     svg.appendChild(el('circle', {
       cx, cy, r,
       fill: 'none',
-      stroke: 'var(--color-border)',
+      stroke: 'var(--color-tick)',
       'stroke-width': '0.8',
-      'stroke-dasharray': '3 3',
+      opacity: '0.5',
     }));
 
     // Speed label on the north axis (just right of 12-o'clock)
@@ -905,7 +1012,6 @@ function buildCompassSVG(observations) {
       'text-anchor': 'start',
       'font-size': '8',
       fill: 'var(--color-text-dim)',
-      opacity: '0.6',
     });
     ringLabel.textContent = String(speedVal);
     svg.appendChild(ringLabel);
@@ -1007,9 +1113,14 @@ function updateWindInfo(observations) {
   infoEl.hidden = false;
   const latest = observations[observations.length - 1];
 
+  const speed = latest.speed.toFixed(1);
+  const gust = latest.gust.toFixed(1);
+  const speedStr = speed === gust
+    ? `${speed} kt`
+    : `${speed} – ${gust} kt`;
+
   infoEl.innerHTML = `
-    <div class="wind-current">${latest.dirLabel} ${latest.speed.toFixed(1)} kt</div>
-    <div class="wind-detail">Gusting ${latest.gust.toFixed(1)} kt</div>
+    <div class="wind-current">${latest.dirLabel} ${speedStr}</div>
   `;
 }
 
@@ -1048,6 +1159,10 @@ async function init() {
     // Water level readout — initial fetch + 60 s refresh
     await refreshWaterLevel();
     setInterval(refreshWaterLevel, 60_000);
+
+    // Moon phase on tide hand — update once per hour (changes slowly)
+    updateMoonPhase();
+    setInterval(updateMoonPhase, 60 * 60_000);
 
     // Re-fetch tide predictions from API every 5 min (handles day rollover)
     setInterval(async () => {
