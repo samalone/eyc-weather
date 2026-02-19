@@ -245,7 +245,13 @@ export class StationCache {
    */
   #trim(product) {
     const arr = this.#data.get(product);
-    const cutoff = new Date(Date.now() - this.#windowMs).toISOString().slice(0, 16);
+    // NOAA timestamps are local time (lst_ldt), so the cutoff must also be
+    // local.  toISOString() returns UTC which would trim everything in
+    // western-of-UTC time zones.
+    const cutoffDate = new Date(Date.now() - this.#windowMs);
+    const cutoff = normalizeTime(
+      `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}-${String(cutoffDate.getDate()).padStart(2, '0')} ${String(cutoffDate.getHours()).padStart(2, '0')}:${String(cutoffDate.getMinutes()).padStart(2, '0')}`,
+    );
 
     // Observations are sorted chronologically; find the first index to keep
     let firstKeep = 0;

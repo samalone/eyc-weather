@@ -420,6 +420,33 @@ function buildClockSVG() {
   risingLabel.textContent = 'RISING';
   svg.appendChild(risingLabel);
 
+  // --- Current water level readout (lower half, below hand in z-order) ---
+  const levelText = el('text', {
+    id: 'tide-level',
+    x: cx,
+    y: cy + 48,
+    ...textStyle,
+    'font-size': '32',
+    'font-weight': '700',
+    fill: 'var(--color-text)',
+    opacity: '0.85',
+  });
+  levelText.textContent = '';
+  svg.appendChild(levelText);
+
+  const levelUnit = el('text', {
+    id: 'tide-level-unit',
+    x: cx,
+    y: cy + 70,
+    ...textStyle,
+    'font-size': '11',
+    'font-weight': '500',
+    fill: 'var(--color-text-dim)',
+    opacity: '0.7',
+  });
+  levelUnit.textContent = '';
+  svg.appendChild(levelUnit);
+
   // --- Hand (rotated dynamically) ---
   const handGroup = document.createElementNS(ns, 'g');
   handGroup.setAttribute('id', 'tide-hand');
@@ -466,6 +493,10 @@ function buildClockSVG() {
 
 let predictions = [];
 
+/** Track the cumulative hand rotation so CSS transitions always take the
+ *  shortest arc, even when crossing the 360°→0° boundary. */
+let currentHandAngle = null;
+
 function updateClock() {
   if (!predictions.length) return;
 
@@ -477,11 +508,22 @@ function updateClock() {
     return;
   }
 
-  const angle = tideAngle(prev, next, now);
+  const targetAngle = tideAngle(prev, next, now);
   const hand = document.getElementById('tide-hand');
-  if (hand) {
-    hand.style.transform = `rotate(${angle}deg)`;
+  if (!hand) return;
+
+  if (currentHandAngle === null) {
+    // First render — jump without animation
+    currentHandAngle = targetAngle;
+  } else {
+    // Compute shortest-arc delta, accounting for the 360°/0° wrap
+    let delta = targetAngle - (((currentHandAngle % 360) + 360) % 360);
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    currentHandAngle += delta;
   }
+
+  hand.style.transform = `rotate(${currentHandAngle}deg)`;
 
   // Update info text
   const infoEl = document.getElementById('tide-info');
@@ -502,6 +544,29 @@ function updateClock() {
       <div class="direction ${dirClass}">${dirText}</div>
       <div class="next-event">Next ${nextType}: ${nextTimeStr} (${next.height.toFixed(1)} ft)</div>
     `;
+  }
+}
+
+// ── Water level readout ──────────────────────────────────────────────────
+
+/** Fetch the latest water level from Providence (station 8454000). */
+async function refreshWaterLevel() {
+  try {
+    const res = await fetch('/api/observations/8454000/water_level');
+    if (!res.ok) return;
+    const json = await res.json();
+    if (!json.data?.length) return;
+
+    const latest = json.data[json.data.length - 1];
+    const feet = parseFloat(latest.v);
+    if (Number.isNaN(feet)) return;
+
+    const levelEl = document.getElementById('tide-level');
+    const unitEl = document.getElementById('tide-level-unit');
+    if (levelEl) levelEl.textContent = feet.toFixed(1);
+    if (unitEl) unitEl.textContent = 'ft MLLW';
+  } catch (err) {
+    console.warn('Water level refresh failed:', err);
   }
 }
 
@@ -696,23 +761,38 @@ function buildCompassSVG(observations) {
     const chroma = isDark ? 0.18 : 0.15;
 
     const speedR = (obs.speed / maxRing) * plotR;
-    const gustR = (obs.gust / maxRing) * plotR;
+    const gustR = (Math.max(obs.gust, obs.speed) / maxRing) * plotR;
 
-    const p1 = polar(obs.dir, speedR);
-    const p2 = polar(obs.dir, gustR);
+    const pCenter = { x: cx, y: cy };
+    const pSpeed = polar(obs.dir, speedR);
+    const pGust = polar(obs.dir, gustR);
 
-    svg.appendChild(el('line', {
-      x1: p1.x, y1: p1.y,
-      x2: p2.x, y2: p2.y,
-      stroke: `oklch(${lightness} ${chroma} ${obs.hue} / ${alpha.toFixed(2)})`,
-      'stroke-width': '3',
-      'stroke-linecap': 'round',
-    }));
+    // Solid line from center to wind speed
+    if (speedR > 0) {
+      svg.appendChild(el('line', {
+        x1: pCenter.x, y1: pCenter.y,
+        x2: pSpeed.x, y2: pSpeed.y,
+        stroke: `oklch(${lightness} ${chroma} ${obs.hue} / ${alpha.toFixed(2)})`,
+        'stroke-width': '3',
+        'stroke-linecap': 'round',
+      }));
+    }
 
-    // Small dot at the gust end of the newest observation
-    if (i === count - 1) {
+    // Thinner extension from speed to gust (if gusting beyond speed)
+    if (gustR > speedR) {
+      svg.appendChild(el('line', {
+        x1: pSpeed.x, y1: pSpeed.y,
+        x2: pGust.x, y2: pGust.y,
+        stroke: `oklch(${lightness} ${chroma} ${obs.hue} / ${(alpha * 0.5).toFixed(2)})`,
+        'stroke-width': '1.5',
+        'stroke-linecap': 'round',
+      }));
+    }
+
+    // Small dot at the tip of the newest observation
+    if (i === count - 1 && gustR > 0) {
       svg.appendChild(el('circle', {
-        cx: p2.x, cy: p2.y, r: 4,
+        cx: pGust.x, cy: pGust.y, r: 4,
         fill: `oklch(${lightness} ${chroma} ${obs.hue})`,
       }));
     }
@@ -775,7 +855,11 @@ async function init() {
     updateClock();
     setInterval(updateClock, 60_000);
 
-    // Re-fetch from API every 5 min (handles day rollover)
+    // Water level readout — initial fetch + 60 s refresh
+    await refreshWaterLevel();
+    setInterval(refreshWaterLevel, 60_000);
+
+    // Re-fetch tide predictions from API every 5 min (handles day rollover)
     setInterval(async () => {
       try {
         predictions = await fetchTides();
