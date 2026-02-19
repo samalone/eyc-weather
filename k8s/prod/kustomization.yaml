@@ -6,4 +6,4 @@ resources:
   - ingress.yaml
 images:
   - name: llamagraphics/eyc-weather
-    newTag: "1.0.3"
+    newTag: "1.0.4"
