@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EYC Weather</title>
+<link rel="stylesheet" href="/fonts/css/fontawesome.min.css">
+<link rel="stylesheet" href="/fonts/css/sharp-duotone-solid.min.css">
 <style>
 /* ── Reset & Base ──────────────────────────────────────────────────────── */
 *,
@@ -167,6 +169,33 @@ header p {
   font-size: 0.85rem;
 }
 
+/* ── Current Conditions card ──────────────────────────────────────────── */
+.conditions-icon {
+  font-size: 4rem;
+  color: var(--color-accent);
+  line-height: 1;
+}
+
+.conditions-temp {
+  font-size: 3.2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-text);
+}
+
+.conditions-feels {
+  font-size: 0.9rem;
+  color: var(--color-text-dim);
+  margin-top: 0.1rem;
+}
+
+.conditions-desc {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--color-text);
+  text-align: center;
+}
+
 /* ── Loading / error states ────────────────────────────────────────────── */
 .status-msg {
   color: var(--color-text-dim);
@@ -184,6 +213,14 @@ header p {
 </header>
 
 <div class="dashboard">
+  <!-- Current Conditions card -->
+  <div class="card" id="conditions-card">
+    <h2>Current Conditions</h2>
+    <div id="conditions-content">
+      <p class="status-msg">Loading conditions&hellip;</p>
+    </div>
+  </div>
+
   <!-- Tide Clock card -->
   <div class="card" id="tide-card">
     <h2>Tide Clock</h2>
@@ -570,6 +607,102 @@ async function refreshWaterLevel() {
   }
 }
 
+// ── Current Conditions ──────────────────────────────────────────────────
+
+/** Map NWS condition codes to Font Awesome sharp-duotone icon names. */
+const NWS_ICON_MAP = {
+  // Clear / fair
+  skc:              { day: 'fa-sun',            night: 'fa-moon' },
+  few:              { day: 'fa-sun-cloud',      night: 'fa-moon-cloud' },
+  sct:              { day: 'fa-cloud-sun',      night: 'fa-cloud-moon' },
+  bkn:              { day: 'fa-cloud-sun',      night: 'fa-cloud-moon' },
+  ovc:              { day: 'fa-cloud',          night: 'fa-cloud' },
+
+  // Windy variants (same icons — wind shown on compass card)
+  wind_skc:         { day: 'fa-sun',            night: 'fa-moon' },
+  wind_few:         { day: 'fa-sun-cloud',      night: 'fa-moon-cloud' },
+  wind_sct:         { day: 'fa-cloud-sun',      night: 'fa-cloud-moon' },
+  wind_bkn:         { day: 'fa-cloud-sun',      night: 'fa-cloud-moon' },
+  wind_ovc:         { day: 'fa-cloud',          night: 'fa-cloud' },
+
+  // Rain
+  rain:             { day: 'fa-cloud-rain',     night: 'fa-cloud-rain' },
+  rain_showers:     { day: 'fa-cloud-sun-rain', night: 'fa-cloud-moon-rain' },
+  rain_showers_hi:  { day: 'fa-cloud-sun-rain', night: 'fa-cloud-moon-rain' },
+
+  // Snow
+  snow:             { day: 'fa-cloud-snow',     night: 'fa-cloud-snow' },
+
+  // Mixed precipitation
+  rain_snow:        { day: 'fa-cloud-sleet',    night: 'fa-cloud-sleet' },
+  rain_sleet:       { day: 'fa-cloud-sleet',    night: 'fa-cloud-sleet' },
+  snow_sleet:       { day: 'fa-cloud-sleet',    night: 'fa-cloud-sleet' },
+  sleet:            { day: 'fa-cloud-sleet',    night: 'fa-cloud-sleet' },
+
+  // Freezing rain
+  fzra:             { day: 'fa-cloud-hail',     night: 'fa-cloud-hail' },
+  rain_fzra:        { day: 'fa-cloud-hail',     night: 'fa-cloud-hail' },
+  snow_fzra:        { day: 'fa-cloud-hail',     night: 'fa-cloud-hail' },
+
+  // Thunderstorms
+  tsra:             { day: 'fa-cloud-bolt',     night: 'fa-cloud-bolt' },
+  tsra_sct:         { day: 'fa-cloud-bolt-sun', night: 'fa-cloud-bolt-moon' },
+  tsra_hi:          { day: 'fa-cloud-bolt-sun', night: 'fa-cloud-bolt-moon' },
+
+  // Severe
+  tornado:          { day: 'fa-tornado',        night: 'fa-tornado' },
+  hurricane:        { day: 'fa-hurricane',      night: 'fa-hurricane' },
+  tropical_storm:   { day: 'fa-hurricane',      night: 'fa-hurricane' },
+  blizzard:         { day: 'fa-snow-blowing',   night: 'fa-snow-blowing' },
+
+  // Visibility
+  dust:             { day: 'fa-smog',           night: 'fa-smog' },
+  smoke:            { day: 'fa-smog',           night: 'fa-smog' },
+  haze:             { day: 'fa-sun-haze',       night: 'fa-smog' },
+  fog:              { day: 'fa-cloud-fog',      night: 'fa-cloud-fog' },
+
+  // Temperature extremes
+  hot:              { day: 'fa-temperature-hot',    night: 'fa-temperature-hot' },
+  cold:             { day: 'fa-temperature-frigid', night: 'fa-temperature-frigid' },
+};
+
+function conditionToIcon(condition, timeOfDay) {
+  const entry = NWS_ICON_MAP[condition];
+  if (!entry) return 'fa-cloud';
+  return entry[timeOfDay] || entry.day;
+}
+
+async function refreshConditions() {
+  try {
+    const res = await fetch('/api/conditions');
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const data = await res.json();
+
+    const container = document.getElementById('conditions-content');
+    if (!container) return;
+
+    const iconClass = conditionToIcon(data.condition, data.timeOfDay);
+    const tempStr = data.temperature != null
+      ? `${Math.round(data.temperature)}°`
+      : '\u2014';
+    const feelsStr = data.feelsLike != null
+      ? `Feels like ${Math.round(data.feelsLike)}°`
+      : '';
+    const descStr = data.textDescription || '';
+
+    container.innerHTML = `
+      <div class="conditions-icon">
+        <i class="fa-sharp-duotone fa-solid ${iconClass}"></i>
+      </div>
+      <div class="conditions-temp">${tempStr}</div>
+      <div class="conditions-feels">${feelsStr}</div>
+      <div class="conditions-desc">${descStr}</div>
+    `;
+  } catch (err) {
+    console.warn('Conditions refresh failed:', err);
+  }
+}
+
 // ── Wind Compass ────────────────────────────────────────────────────────
 
 /** Wind source definitions.  Each gets its own hue on the compass. */
@@ -761,38 +894,23 @@ function buildCompassSVG(observations) {
     const chroma = isDark ? 0.18 : 0.15;
 
     const speedR = (obs.speed / maxRing) * plotR;
-    const gustR = (Math.max(obs.gust, obs.speed) / maxRing) * plotR;
+    const gustR = (obs.gust / maxRing) * plotR;
 
-    const pCenter = { x: cx, y: cy };
-    const pSpeed = polar(obs.dir, speedR);
-    const pGust = polar(obs.dir, gustR);
+    const p1 = polar(obs.dir, speedR);
+    const p2 = polar(obs.dir, gustR);
 
-    // Solid line from center to wind speed
-    if (speedR > 0) {
-      svg.appendChild(el('line', {
-        x1: pCenter.x, y1: pCenter.y,
-        x2: pSpeed.x, y2: pSpeed.y,
-        stroke: `oklch(${lightness} ${chroma} ${obs.hue} / ${alpha.toFixed(2)})`,
-        'stroke-width': '3',
-        'stroke-linecap': 'round',
-      }));
-    }
+    svg.appendChild(el('line', {
+      x1: p1.x, y1: p1.y,
+      x2: p2.x, y2: p2.y,
+      stroke: `oklch(${lightness} ${chroma} ${obs.hue} / ${alpha.toFixed(2)})`,
+      'stroke-width': '3',
+      'stroke-linecap': 'round',
+    }));
 
-    // Thinner extension from speed to gust (if gusting beyond speed)
-    if (gustR > speedR) {
-      svg.appendChild(el('line', {
-        x1: pSpeed.x, y1: pSpeed.y,
-        x2: pGust.x, y2: pGust.y,
-        stroke: `oklch(${lightness} ${chroma} ${obs.hue} / ${(alpha * 0.5).toFixed(2)})`,
-        'stroke-width': '1.5',
-        'stroke-linecap': 'round',
-      }));
-    }
-
-    // Small dot at the tip of the newest observation
-    if (i === count - 1 && gustR > 0) {
+    // Small dot at the gust end of the newest observation
+    if (i === count - 1) {
       svg.appendChild(el('circle', {
-        cx: pGust.x, cy: pGust.y, r: 4,
+        cx: p2.x, cy: p2.y, r: 4,
         fill: `oklch(${lightness} ${chroma} ${obs.hue})`,
       }));
     }
@@ -873,6 +991,10 @@ async function init() {
     container.innerHTML = `<p class="status-msg">Unable to load tide data.</p>`;
     console.error('Tide init error:', err);
   }
+
+  // ── Current conditions ──────────────────────────────────────────────
+  await refreshConditions();
+  setInterval(refreshConditions, 60_000);
 
   // ── Wind compass ────────────────────────────────────────────────────
   await refreshWind();

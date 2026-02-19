@@ -7,6 +7,7 @@ import {
   STATION_PROVIDENCE,
 } from './src/noaa.js';
 import { StationCache } from './src/cache.js';
+import { getConditions } from './src/nws.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -79,6 +80,17 @@ app.get('/api/observations/:station/:product', (req, res) => {
     });
   } catch (err) {
     res.status(404).json({ error: err.message });
+  }
+});
+
+/** Current weather conditions from NWS (KPVD). */
+app.get('/api/conditions', async (_req, res) => {
+  try {
+    const conditions = await getConditions();
+    res.json(conditions);
+  } catch (err) {
+    console.error('[api] /api/conditions error:', err);
+    res.status(502).json({ error: 'Failed to fetch conditions' });
   }
 });
 
