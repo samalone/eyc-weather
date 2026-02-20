@@ -134,13 +134,17 @@ export async function getTidePredictions() {
   }
 
   const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   console.log(`[noaa] Fetching tide predictions for ${today}`);
 
+  // Start from yesterday so the tide clock always has a previous
+  // high/low event to bracket the current time, even right after midnight.
   const json = await fetchNoaa({
-    begin_date: toNoaaDate(now),
+    begin_date: toNoaaDate(yesterday),
     end_date: toNoaaDate(tomorrow),
     station: STATION_PAWTUXET,
     product: 'predictions',
