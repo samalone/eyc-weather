@@ -7,6 +7,12 @@ metadata:
     app: eyc-weather
 spec:
   replicas: 1
+  # The cluster runs a single 1-core node that is ~99% CPU-requested, so two
+  # eyc-weather pods can't coexist. Recreate terminates the old pod before
+  # starting the new one (a brief blip on deploy) instead of the default
+  # rolling update, which would surge to a 2nd pod and deadlock on CPU.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: eyc-weather
