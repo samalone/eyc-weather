@@ -33,15 +33,29 @@
 .icon-temperature-frigid { --fa-primary-color: oklch(0.55 0.14 250); --fa-secondary-color: oklch(0.72 0.10 230); --fa-secondary-opacity: 0.7; }
 
 /* ── Times card icons (light mode) ────────────────────────────────────── */
+/* Nautical dawn/dusk use fa-stars (twilight); cool blue for dawn, deep
+   violet for dusk — kept distinct from the moon icon's mid-blue. */
 .times-icon-dawn {
-  --fa-primary-color: oklch(0.75 0.15 65);
-  --fa-secondary-color: oklch(0.82 0.13 75);
+  --fa-primary-color: oklch(0.62 0.13 240);
+  --fa-secondary-color: oklch(0.70 0.11 250);
+  --fa-secondary-opacity: 0.7;
+}
+
+.times-icon-sunrise {
+  --fa-primary-color: oklch(0.80 0.17 85);
+  --fa-secondary-color: oklch(0.86 0.15 90);
+  --fa-secondary-opacity: 0.7;
+}
+
+.times-icon-sunset {
+  --fa-primary-color: oklch(0.66 0.16 50);
+  --fa-secondary-color: oklch(0.74 0.14 60);
   --fa-secondary-opacity: 0.7;
 }
 
 .times-icon-dusk {
-  --fa-primary-color: oklch(0.60 0.14 35);
-  --fa-secondary-color: oklch(0.70 0.12 50);
+  --fa-primary-color: oklch(0.52 0.14 300);
+  --fa-secondary-color: oklch(0.62 0.12 295);
   --fa-secondary-opacity: 0.7;
 }
 
@@ -89,8 +103,10 @@
   .icon-temperature-frigid { --fa-primary-color: oklch(0.62 0.14 250); --fa-secondary-color: oklch(0.78 0.10 230); --fa-secondary-opacity: 0.7; }
 
   /* Times card icons */
-  .times-icon-dawn { --fa-primary-color: oklch(0.80 0.16 65);  --fa-secondary-color: oklch(0.86 0.13 75);  --fa-secondary-opacity: 0.7; }
-  .times-icon-dusk { --fa-primary-color: oklch(0.68 0.14 35);  --fa-secondary-color: oklch(0.76 0.12 50);  --fa-secondary-opacity: 0.7; }
+  .times-icon-dawn { --fa-primary-color: oklch(0.72 0.13 240); --fa-secondary-color: oklch(0.80 0.11 250); --fa-secondary-opacity: 0.7; }
+  .times-icon-sunrise { --fa-primary-color: oklch(0.85 0.17 90); --fa-secondary-color: oklch(0.90 0.15 95); --fa-secondary-opacity: 0.7; }
+  .times-icon-sunset { --fa-primary-color: oklch(0.72 0.16 55);  --fa-secondary-color: oklch(0.80 0.14 65); --fa-secondary-opacity: 0.7; }
+  .times-icon-dusk { --fa-primary-color: oklch(0.66 0.14 300); --fa-secondary-color: oklch(0.74 0.12 295); --fa-secondary-opacity: 0.7; }
   .times-icon-moon { --fa-primary-color: oklch(0.80 0.08 250); --fa-secondary-color: oklch(0.85 0.06 260); --fa-secondary-opacity: 0.6; }
   .times-icon-tide { --fa-primary-color: oklch(0.62 0.14 240); --fa-secondary-color: oklch(0.72 0.12 250); --fa-secondary-opacity: 0.7; }
 }

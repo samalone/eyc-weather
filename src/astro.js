@@ -39,8 +39,9 @@ export function getDaylight() {
 }
 
 /**
- * Return astronomical events (nautical dawn/dusk, moonrise/moonset) for
- * today and tomorrow.  Each event has `{ time, label }` where `time` is
+ * Return astronomical events (nautical dawn/dusk, sunrise/sunset,
+ * moonrise/moonset) for today and tomorrow.  Each event has
+ * `{ time, label }` where `time` is
  * an Eastern-local ISO string ("YYYY-MM-DDTHH:MM").
  *
  * Cached per calendar day (events don't change within a day).
@@ -68,6 +69,12 @@ export function getAstroEvents() {
 
     if (sun.nauticalDawn instanceof Date && !isNaN(sun.nauticalDawn)) {
       events.push({ time: toLocalIso(sun.nauticalDawn), label: 'Nautical dawn' });
+    }
+    if (sun.sunrise instanceof Date && !isNaN(sun.sunrise)) {
+      events.push({ time: toLocalIso(sun.sunrise), label: 'Sunrise' });
+    }
+    if (sun.sunset instanceof Date && !isNaN(sun.sunset)) {
+      events.push({ time: toLocalIso(sun.sunset), label: 'Sunset' });
     }
     if (sun.nauticalDusk instanceof Date && !isNaN(sun.nauticalDusk)) {
       events.push({ time: toLocalIso(sun.nauticalDusk), label: 'Nautical dusk' });
