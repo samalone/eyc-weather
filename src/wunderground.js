@@ -30,6 +30,21 @@ const STALE_MS = 30 * 60 * 1000;
 /** Wind trail window — match NOAA's 1-hour wind history. */
 const WIND_WINDOW_MS = 60 * 60 * 1000;
 
+/**
+ * Correction applied to WU wind directions, in degrees.
+ *
+ * The KRICRANS68 readings run ~180° opposite NOAA Providence, suggesting the
+ * direction vane may have been reinstalled backwards during a repair. Set to
+ * 180 to test that hypothesis; set back to 0 to show the raw sensor reading.
+ */
+const WIND_DIR_OFFSET_DEG = 180;
+
+/** Apply WIND_DIR_OFFSET_DEG, wrapping into [0, 360). Null-safe. */
+function correctWindDir(deg) {
+  if (deg == null) return null;
+  return ((deg + WIND_DIR_OFFSET_DEG) % 360 + 360) % 360;
+}
+
 // ── Cache state ──────────────────────────────────────────────────────────
 
 let cache = {
@@ -150,7 +165,7 @@ async function fetchCurrentObservation() {
     humidity: obs.humidity ?? null,
     windSpeed: mphToKnots(imp.windSpeed),
     windGust: mphToKnots(imp.windGust),
-    windDirection: obs.winddir ?? null,
+    windDirection: correctWindDir(obs.winddir),
     dewPoint: imp.dewpt ?? null,
     pressure: imp.pressure ?? null,
     precipRate: imp.precipRate ?? null,
@@ -219,7 +234,7 @@ async function fetchWindHistory() {
   return (json.observations ?? [])
     .map((obs) => {
       const imp = obs.imperial ?? {};
-      const dir = obs.winddirAvg;
+      const dir = correctWindDir(obs.winddirAvg);
       return {
         ms: Date.parse(obs.obsTimeUtc),
         time: obs.obsTimeUtc,
