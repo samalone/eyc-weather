@@ -12,10 +12,10 @@ import { StationCache } from './src/cache.js';
 import { getForecast } from './src/nws.js';
 import { getCurrentConditions } from './src/conditions.js';
 import { getWuWind } from './src/wunderground.js';
+import { getAstroEvents, getDaylight, nowLocal } from './src/astro.js';
 
 /** Pseudo-station id the frontend uses for the EYC Weather Underground PWS. */
 const WU_STATION = 'wunderground';
-import { getAstroEvents, getDaylight, nowLocal } from './src/astro.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;

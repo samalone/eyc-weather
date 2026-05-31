@@ -45,7 +45,9 @@ const WIND_DIR_OFFSET_DEG = 180;
 /** Apply WIND_DIR_OFFSET_DEG, wrapping into [0, 360). Null-safe. */
 function correctWindDir(deg) {
   if (deg == null) return null;
-  return ((deg + WIND_DIR_OFFSET_DEG) % 360 + 360) % 360;
+  const num = Number(deg);
+  if (Number.isNaN(num)) return null;
+  return ((num + WIND_DIR_OFFSET_DEG) % 360 + 360) % 360;
 }
 
 // ── Cache state ──────────────────────────────────────────────────────────
@@ -92,11 +94,20 @@ function compassLabel(deg) {
  * compass merges both sources and sorts by this string; keeping the same
  * naive-local basis means the trails stay aligned for any viewer timezone.
  */
+const EASTERN_PARTS_FMT = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hourCycle: 'h23',
+});
 function toEasternNaive(utcString) {
-  // sv-SE renders as "YYYY-MM-DD HH:MM:SS" (24-hour, ISO-like).
-  return new Date(utcString)
-    .toLocaleString('sv-SE', { timeZone: 'America/New_York' })
-    .replace(' ', 'T');
+  // Build the string from parts rather than a locale-formatted string, which
+  // is locale/ICU-independent and avoids fragile string surgery.
+  const p = {};
+  for (const part of EASTERN_PARTS_FMT.formatToParts(new Date(utcString))) {
+    p[part.type] = part.value;
+  }
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
 }
 
 /** Read API key + station from the environment (call-time, not load-time). */
@@ -257,13 +268,18 @@ async function fetchWindHistory() {
   const json = await res.json();
   const cutoff = Date.now() - WIND_WINDOW_MS;
 
+  // Filter to the last hour FIRST — the endpoint returns a full day (~288
+  // points) but only ~12 are in-window, so we skip parsing/formatting the 95%
+  // we'd discard. Keep the parsed ms on each survivor to sort without re-parsing.
   return (json.observations ?? [])
-    .map((obs) => {
+    .map((obs) => ({ obs, ms: Date.parse(obs.obsTimeUtc) }))
+    .filter(({ ms }) => !Number.isNaN(ms) && ms >= cutoff)
+    .sort((a, b) => a.ms - b.ms)
+    .map(({ obs }) => {
       const imp = obs.imperial ?? {};
       const dir = correctWindDir(obs.winddirAvg);
       const speed = mphToKnots(imp.windspeedAvg) ?? 0;
       return {
-        ms: Date.parse(obs.obsTimeUtc),
         // Eastern wall-clock time (no offset) to match NOAA's lst_ldt format,
         // so both sources sort consistently regardless of the viewer's TZ.
         time: toEasternNaive(obs.obsTimeUtc),
@@ -274,11 +290,7 @@ async function fetchWindHistory() {
         d: dir ?? 0,
         dr: compassLabel(dir),
       };
-    })
-    // Drop pre-window points and anything missing a usable timestamp.
-    .filter((o) => !Number.isNaN(o.ms) && o.ms >= cutoff)
-    .sort((a, b) => a.ms - b.ms)
-    .map(({ ms, ...keep }) => keep);
+    });
 }
 
 /**
