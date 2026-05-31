@@ -706,17 +706,17 @@ function buildClockSVG() {
   moonGroup.style.transformOrigin = `${cx}px ${moonCY}px`;
   moonGroup.style.transition = 'transform 1s ease-in-out';
 
-  // Base circle — the lit side of the moon
+  // Base circle — the unlit (dark) side of the moon
   moonGroup.appendChild(el('circle', {
     cx, cy: moonCY, r: moonR,
-    fill: 'var(--color-moon-lit)',
+    fill: 'var(--color-moon-dark)',
   }));
 
-  // Dark portion at full opacity (path updated dynamically)
+  // Illuminated portion, drawn on top (path updated dynamically)
   moonGroup.appendChild(el('path', {
     id: 'moon-phase-path',
     d: '',
-    fill: 'var(--color-moon-dark)',
+    fill: 'var(--color-moon-lit)',
   }));
 
   // Thin outline for contrast (visible in light mode, transparent in dark)
@@ -852,39 +852,29 @@ function moonPhase(date = new Date()) {
  * @returns {string} SVG path d attribute
  */
 function moonPhasePath(phase, mx, my, r) {
-  // Terminator curvature: +1 at new, 0 at quarters, −1 at full
-  const sweep = Math.cos(phase * 2 * Math.PI);
-  const rx = Math.abs(sweep) * r;
-
   const top = `${mx} ${my - r}`;
   const bot = `${mx} ${my + r}`;
 
-  if (phase <= 0) {
-    // New moon — entirely dark
-    return '';
-  }
-  if (phase >= 1) {
-    // Also new moon (cycle wrap)
-    return '';
-  }
+  // New moon — nothing illuminated.
+  if (phase <= 0 || phase >= 1) return '';
+  // Full moon — the whole disc is illuminated.
   if (Math.abs(phase - 0.5) < 0.001) {
-    // Full moon — full circle
     return `M ${mx} ${my - r} A ${r} ${r} 0 1 0 ${mx} ${my + r} A ${r} ${r} 0 1 0 ${mx} ${my - r}`;
   }
 
-  if (phase < 0.25) {
-    // Waxing crescent: small right-side lit
-    return `M ${top} A ${r} ${r} 0 0 1 ${bot} A ${rx} ${r} 0 0 1 ${top}`;
-  } else if (phase < 0.5) {
-    // Waxing gibbous: large right-side lit
-    return `M ${top} A ${r} ${r} 0 0 1 ${bot} A ${rx} ${r} 0 0 0 ${top}`;
-  } else if (phase < 0.75) {
-    // Waning gibbous: large left-side lit
-    return `M ${top} A ${r} ${r} 0 0 0 ${bot} A ${rx} ${r} 0 0 1 ${top}`;
-  } else {
-    // Waning crescent: small left-side lit
-    return `M ${top} A ${r} ${r} 0 0 0 ${bot} A ${rx} ${r} 0 0 0 ${top}`;
-  }
+  // The illuminated region is bounded by two arcs sharing the top & bottom
+  // poles: the lit limb (a half-circle of radius r) and the terminator (a
+  // half-ellipse whose x-radius collapses to 0 at the quarters).
+  //
+  // Northern-hemisphere convention: the right limb lights up while waxing,
+  // the left limb while waning. The terminator's bulge flips between crescent
+  // (<50% lit) and gibbous (>50% lit).
+  const waxing = phase < 0.5;
+  const limbSweep = waxing ? 1 : 0;
+  const rx = Math.abs(Math.cos(phase * 2 * Math.PI)) * r;
+  const termSweep = waxing ? (phase < 0.25 ? 0 : 1) : (phase < 0.75 ? 0 : 1);
+
+  return `M ${top} A ${r} ${r} 0 0 ${limbSweep} ${bot} A ${rx} ${r} 0 0 ${termSweep} ${top}`;
 }
 
 /** Update the moon phase disc on the tide clock hand. */
