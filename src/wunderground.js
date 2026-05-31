@@ -36,11 +36,15 @@ const WIND_WINDOW_MS = 60 * 60 * 1000;
 /**
  * Correction applied to WU wind directions, in degrees.
  *
- * The KRICRANS68 readings run ~180° opposite NOAA Providence, suggesting the
- * direction vane may have been reinstalled backwards during a repair. Set to
- * 180 to test that hypothesis; set back to 0 to show the raw sensor reading.
+ * Kept at 0: the KRICRANS68 vane has a friction set-screw that slips, so its
+ * heading drifts unpredictably (an earlier ~180° match with NOAA turned out to
+ * be coincidence, not a fixed mounting offset). Because the direction can't be
+ * trusted, the PWS is currently shown speed-only — see the `speedOnly` flag in
+ * WIND_SOURCES (public/index.html). The real fix is mechanical: tighten the
+ * set-screw at the station. This offset stays here for when the hardware is
+ * sound and direction display is re-enabled.
  */
-const WIND_DIR_OFFSET_DEG = 180;
+const WIND_DIR_OFFSET_DEG = 0;
 
 /** Apply WIND_DIR_OFFSET_DEG, wrapping into [0, 360). Null-safe. */
 function correctWindDir(deg) {
