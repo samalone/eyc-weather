@@ -188,14 +188,36 @@ header p {
 
 /* ── Wind info text ────────────────────────────────────────────────────── */
 .wind-info {
-  text-align: center;
-  font-size: 1.35rem;
-  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: center;
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.wind-info .wind-source {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.wind-info .wind-swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  flex: none;
+  align-self: center;
+}
+
+.wind-info .wind-source-label {
+  color: var(--color-text-dim);
+  font-size: 0.9rem;
 }
 
 .wind-info .wind-current {
   font-weight: 600;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   color: var(--color-accent);
 }
 
@@ -1326,7 +1348,7 @@ async function refreshTideGraph() {
 /** Wind source definitions.  Each gets its own hue on the compass. */
 const WIND_SOURCES = [
   { station: '8453662', label: 'NOAA Providence', hue: 250 },
-  // Future: { station: 'wunderground', label: 'EYC PWS', hue: 30 },
+  { station: 'wunderground', label: 'EYC PWS', hue: 30 },
 ];
 
 /** Fetch wind observations for a single station. */
@@ -1582,17 +1604,34 @@ function updateWindInfo(observations) {
   if (!infoEl || !observations.length) return;
 
   infoEl.hidden = false;
-  const latest = observations[observations.length - 1];
 
-  const speed = latest.speed.toFixed(1);
-  const gust = latest.gust.toFixed(1);
-  const speedStr = speed === gust
-    ? `${speed} kt`
-    : `${speed} – ${gust} kt`;
+  // Latest observation per source (observations are sorted oldest→newest,
+  // so the last one seen for each station is its most recent).
+  const latestByStation = new Map();
+  for (const obs of observations) {
+    latestByStation.set(obs.station, obs);
+  }
 
-  infoEl.innerHTML = `
-    <div class="wind-current">${latest.dirLabel} ${speedStr}</div>
-  `;
+  // Render one legend row per configured source that has data, in order.
+  const rows = WIND_SOURCES
+    .filter((src) => latestByStation.has(src.station))
+    .map((src) => {
+      const latest = latestByStation.get(src.station);
+      const speed = latest.speed.toFixed(1);
+      const gust = latest.gust.toFixed(1);
+      const speedStr = speed === gust ? `${speed} kt` : `${speed} – ${gust} kt`;
+      const swatch = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${src.hue})`;
+      return `
+        <div class="wind-source">
+          <span class="wind-swatch" style="background:${swatch}"></span>
+          <span class="wind-source-label">${src.label}</span>
+          <span class="wind-current">${latest.dirLabel} ${speedStr}</span>
+        </div>
+      `;
+    })
+    .join('');
+
+  infoEl.innerHTML = rows;
 }
 
 // ── Wind state & update ─────────────────────────────────────────────────

@@ -17,6 +17,8 @@
  */
 
 const WU_BASE = 'https://api.weather.com/v2/pws/observations/current';
+/** Rapid (≈5 min) observations for the current day — used for the wind trail. */
+const WU_HISTORY_BASE = 'https://api.weather.com/v2/pws/observations/all/1day';
 const DEFAULT_STATION_ID = 'KRICRANS68';
 
 /** Cache TTL — WU PWS stations report every few minutes; 5 min matches NWS. */
@@ -25,11 +27,22 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 /** An observation older than this is treated as "station offline". */
 const STALE_MS = 30 * 60 * 1000;
 
+/** Wind trail window — match NOAA's 1-hour wind history. */
+const WIND_WINDOW_MS = 60 * 60 * 1000;
+
 // ── Cache state ──────────────────────────────────────────────────────────
 
 let cache = {
   /** @type {object | null} */
   data: null,
+  /** @type {number} Date.now() when last fetched */
+  fetchedAt: 0,
+};
+
+/** Separate cache for the wind trail (different endpoint, larger payload). */
+let windCache = {
+  /** @type {object[]} */
+  data: [],
   /** @type {number} Date.now() when last fetched */
   fetchedAt: 0,
 };
@@ -45,6 +58,24 @@ function mphToKnots(mph) {
   return mph * 0.868976;
 }
 
+/** 16-point compass label for a direction in degrees. */
+const COMPASS_16 = [
+  'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+  'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW',
+];
+function compassLabel(deg) {
+  if (deg == null) return '';
+  return COMPASS_16[Math.round(deg / 22.5) % 16];
+}
+
+/** Read API key + station from the environment (call-time, not load-time). */
+function wuConfig() {
+  return {
+    apiKey: process.env.WUNDERGROUND_API_KEY,
+    stationId: process.env.WUNDERGROUND_STATION_ID || DEFAULT_STATION_ID,
+  };
+}
+
 // ── Fetch & parse ──────────────────────────────────────────────────────────
 
 /**
@@ -54,8 +85,7 @@ function mphToKnots(mph) {
  *   is disabled (no key), offline (no/empty/stale data), or errors.
  */
 async function fetchCurrentObservation() {
-  const apiKey = process.env.WUNDERGROUND_API_KEY;
-  const stationId = process.env.WUNDERGROUND_STATION_ID || DEFAULT_STATION_ID;
+  const { apiKey, stationId } = wuConfig();
 
   if (!apiKey) {
     if (!warnedMissingKey) {
@@ -154,5 +184,71 @@ export async function getWuConditions() {
       + `${data.temperature?.toFixed(0)}°F`,
     );
   }
+  return data;
+}
+
+// ── Wind trail ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch the last hour of rapid wind observations and normalize them into the
+ * same shape the wind compass consumes for NOAA stations
+ * ({ time, s, g, d, dr }, speeds in knots).
+ *
+ * Returns `[]` when WU is disabled (no key) or the station is offline (no
+ * recent observations) so the source simply drops off the compass.
+ *
+ * @returns {Promise<object[]>}
+ */
+async function fetchWindHistory() {
+  const { apiKey, stationId } = wuConfig();
+  if (!apiKey) return [];
+
+  const url = `${WU_HISTORY_BASE}?stationId=${encodeURIComponent(stationId)}`
+    + `&format=json&units=e&numericPrecision=decimal`
+    + `&apiKey=${encodeURIComponent(apiKey)}`;
+
+  const res = await fetch(url);
+  if (res.status === 204) return [];
+  if (!res.ok) {
+    throw new Error(`WU history API ${res.status}: ${res.statusText}`);
+  }
+
+  const json = await res.json();
+  const cutoff = Date.now() - WIND_WINDOW_MS;
+
+  return (json.observations ?? [])
+    .map((obs) => {
+      const imp = obs.imperial ?? {};
+      const dir = obs.winddirAvg;
+      return {
+        ms: Date.parse(obs.obsTimeUtc),
+        time: obs.obsTimeUtc,
+        s: mphToKnots(imp.windspeedAvg) ?? 0,
+        g: mphToKnots(imp.windgustHigh ?? imp.windgustAvg) ?? 0,
+        d: dir ?? 0,
+        dr: compassLabel(dir),
+      };
+    })
+    // Drop pre-window points and anything missing a usable timestamp.
+    .filter((o) => !Number.isNaN(o.ms) && o.ms >= cutoff)
+    .sort((a, b) => a.ms - b.ms)
+    .map(({ ms, ...keep }) => keep);
+}
+
+/**
+ * Return the last hour of WU wind observations, fetching if the cache is
+ * stale.  Empty array when WU is disabled/offline.
+ *
+ * @returns {Promise<object[]>}
+ */
+export async function getWuWind() {
+  const now = Date.now();
+  if (windCache.fetchedAt && (now - windCache.fetchedAt) < CACHE_TTL_MS) {
+    return windCache.data;
+  }
+
+  const data = await fetchWindHistory();
+  windCache = { data, fetchedAt: now };
+  console.log(`[wu] Cached wind trail: ${data.length} observations`);
   return data;
 }

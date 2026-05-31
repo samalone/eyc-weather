@@ -46,7 +46,7 @@ Provides: temperature, humidity, dew point, wind (speed/dir/gust), pressure, pre
 
 The API key must be obtained from a Weather Underground account that owns a contributing PWS. Store it in the `WUNDERGROUND_API_KEY` environment variable (station ID in `WUNDERGROUND_STATION_ID`, default `KRICRANS68`).
 
-> **Status:** Integrated. `src/wunderground.js` fetches/caches the current observation; `src/conditions.js` orchestrates the `/api/conditions` card — it **favors WU** for local temp/wind/humidity/dew point/pressure/precip, borrows the sky condition & description from NWS (WU has none), and **falls back entirely to NWS** when the WU station is offline, stale (>30 min), or the key is missing. WU wind on the compass (`/api/observations`) is still future work.
+> **Status:** Integrated. `src/wunderground.js` fetches/caches the current observation; `src/conditions.js` orchestrates the `/api/conditions` card — it **favors WU** for local temp/wind/humidity/dew point/pressure/precip, borrows the sky condition & description from NWS (WU has none), and **falls back entirely to NWS** when the WU station is offline, stale (>30 min), or the key is missing. The wind compass also plots WU as a second source: `getWuWind()` serves the WU station's last hour of rapid observations (`observations/all/1day`, filtered to 60 min) via `/api/observations/wunderground/wind`, in a distinct color alongside NOAA. (Note: the KRICRANS68 wind-direction sensor currently appears stuck reporting ESE — shown as-is.)
 
 ## Environment Variables
 

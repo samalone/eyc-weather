@@ -11,6 +11,10 @@ import {
 import { StationCache } from './src/cache.js';
 import { getForecast } from './src/nws.js';
 import { getCurrentConditions } from './src/conditions.js';
+import { getWuWind } from './src/wunderground.js';
+
+/** Pseudo-station id the frontend uses for the EYC Weather Underground PWS. */
+const WU_STATION = 'wunderground';
 import { getAstroEvents, getDaylight, nowLocal } from './src/astro.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -84,6 +88,20 @@ app.get(bp('/api/tides'), async (_req, res) => {
 /** Cached observations for a station + product. */
 app.get(bp('/api/observations/:station/:product'), async (req, res) => {
   const { station, product } = req.params;
+
+  // Weather Underground PWS — served from the WU client, not a NOAA cache.
+  if (station === WU_STATION) {
+    if (product !== 'wind') {
+      return res.status(404).json({ error: `Unknown WU product: ${product}` });
+    }
+    try {
+      const data = await getWuWind();
+      return res.json({ station, product, count: data.length, data });
+    } catch (err) {
+      return res.status(502).json({ error: err.message });
+    }
+  }
+
   const cacher = stationCaches.get(station);
 
   if (!cacher) {
