@@ -1561,6 +1561,12 @@ function buildCompassSVG(observations) {
   // presentation attributes don't resolve var() inside oklch().
   const count = observations.length;
 
+  // The most recent observation index for each source — those get an endpoint
+  // dot, so every trail (not just whichever sorts globally last) is marked.
+  const newestIndexByStation = new Map();
+  observations.forEach((obs, i) => newestIndexByStation.set(obs.station, i));
+  const dotIndices = new Set(newestIndexByStation.values());
+
   for (let i = 0; i < count; i++) {
     const obs = observations[i];
     const alpha = count === 1 ? 1 : 0.2 + 0.8 * (i / (count - 1));
@@ -1580,8 +1586,8 @@ function buildCompassSVG(observations) {
     line.style.stroke = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${obs.hue} / ${alpha.toFixed(2)})`;
     svg.appendChild(line);
 
-    // Small dot at the gust end of the newest observation
-    if (i === count - 1) {
+    // Small dot at the gust end of each source's newest observation
+    if (dotIndices.has(i)) {
       const dot = el('circle', { cx: p2.x, cy: p2.y, r: 4 });
       dot.style.fill = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${obs.hue})`;
       svg.appendChild(dot);

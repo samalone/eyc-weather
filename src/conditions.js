@@ -50,24 +50,14 @@ export async function getCurrentConditions() {
     return { ...nws, source: 'nws' };
   }
 
-  // WU online → its local numbers win; borrow the sky condition/description
-  // from NWS (WU has none). Provide neutral defaults if NWS is also down.
+  // WU online → its local numbers win (spread so new WU fields pass through
+  // automatically); borrow the sky condition/description from NWS (WU has
+  // none). If NWS is also down, leave condition null — the frontend renders a
+  // neutral icon — rather than asserting 'skc' (clear), which would show a
+  // sunny sky during real weather.
   return {
-    source: 'wunderground',
-    stationId: wu.stationId,
-    timestamp: wu.timestamp,
-    temperature: wu.temperature,
-    feelsLike: wu.feelsLike,
-    humidity: wu.humidity,
-    windSpeed: wu.windSpeed,
-    windGust: wu.windGust,
-    windDirection: wu.windDirection,
-    dewPoint: wu.dewPoint,
-    pressure: wu.pressure,
-    precipRate: wu.precipRate,
-    precipTotal: wu.precipTotal,
-    // Sky state comes from NWS only.
-    condition: nws?.condition ?? 'skc',
+    ...wu,
+    condition: nws?.condition ?? null,
     timeOfDay: nws?.timeOfDay ?? 'day',
     textDescription: nws?.textDescription ?? '',
   };

@@ -27,6 +27,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 /** An observation older than this is treated as "station offline". */
 const STALE_MS = 30 * 60 * 1000;
 
+/** Tolerance for a PWS clock running ahead; beyond this, reject as bogus. */
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
+
 /** Wind trail window — match NOAA's 1-hour wind history. */
 const WIND_WINDOW_MS = 60 * 60 * 1000;
 
@@ -83,6 +86,19 @@ function compassLabel(deg) {
   return COMPASS_16[Math.round(deg / 22.5) % 16];
 }
 
+/**
+ * Convert a UTC timestamp ("…Z") to an Eastern wall-clock string without an
+ * offset ("YYYY-MM-DDTHH:MM:SS"), matching NOAA's lst_ldt format. The wind
+ * compass merges both sources and sorts by this string; keeping the same
+ * naive-local basis means the trails stay aligned for any viewer timezone.
+ */
+function toEasternNaive(utcString) {
+  // sv-SE renders as "YYYY-MM-DD HH:MM:SS" (24-hour, ISO-like).
+  return new Date(utcString)
+    .toLocaleString('sv-SE', { timeZone: 'America/New_York' })
+    .replace(' ', 'T');
+}
+
 /** Read API key + station from the environment (call-time, not load-time). */
 function wuConfig() {
   return {
@@ -134,11 +150,13 @@ async function fetchCurrentObservation() {
   }
 
   // Reject stale data — the station can stop reporting while the API keeps
-  // returning the last known observation.
+  // returning the last known observation. Also reject readings dated in the
+  // future (a PWS clock skewed ahead would otherwise pass as "fresh").
   const obsMs = Date.parse(obs.obsTimeUtc);
-  if (Number.isNaN(obsMs) || (Date.now() - obsMs) > STALE_MS) {
+  const age = Date.now() - obsMs;
+  if (Number.isNaN(obsMs) || age > STALE_MS || age < -CLOCK_SKEW_MS) {
     console.warn(
-      `[wu] Station ${stationId}: observation is stale `
+      `[wu] Station ${stationId}: observation timestamp out of range `
       + `(${obs.obsTimeUtc}) — treating as offline`,
     );
     return null;
@@ -190,7 +208,15 @@ export async function getWuConditions() {
     return cache.data;
   }
 
-  const data = await fetchCurrentObservation();
+  // Negative-cache errors too (not just offline): a hard failure — 401 bad
+  // key, 429 rate-limit, 5xx, network reject — must not re-hit WU on every
+  // request, or it would compound a rate-limit problem. Fall back to NWS.
+  let data = null;
+  try {
+    data = await fetchCurrentObservation();
+  } catch (err) {
+    console.error('[wu] conditions fetch failed:', err.message);
+  }
   cache = { data, fetchedAt: now };
 
   if (data) {
@@ -235,11 +261,16 @@ async function fetchWindHistory() {
     .map((obs) => {
       const imp = obs.imperial ?? {};
       const dir = correctWindDir(obs.winddirAvg);
+      const speed = mphToKnots(imp.windspeedAvg) ?? 0;
       return {
         ms: Date.parse(obs.obsTimeUtc),
-        time: obs.obsTimeUtc,
-        s: mphToKnots(imp.windspeedAvg) ?? 0,
-        g: mphToKnots(imp.windgustHigh ?? imp.windgustAvg) ?? 0,
+        // Eastern wall-clock time (no offset) to match NOAA's lst_ldt format,
+        // so both sources sort consistently regardless of the viewer's TZ.
+        time: toEasternNaive(obs.obsTimeUtc),
+        s: speed,
+        // Fall back to the speed (zero-length gust) rather than 0, which would
+        // draw the gust spoke pointing inward past the speed point.
+        g: mphToKnots(imp.windgustHigh ?? imp.windgustAvg) ?? speed,
         d: dir ?? 0,
         dr: compassLabel(dir),
       };
@@ -262,7 +293,14 @@ export async function getWuWind() {
     return windCache.data;
   }
 
-  const data = await fetchWindHistory();
+  // Negative-cache errors (see getWuConditions): drop the trail on failure
+  // rather than re-hitting a possibly rate-limited endpoint every refresh.
+  let data = [];
+  try {
+    data = await fetchWindHistory();
+  } catch (err) {
+    console.error('[wu] wind fetch failed:', err.message);
+  }
   windCache = { data, fetchedAt: now };
   console.log(`[wu] Cached wind trail: ${data.length} observations`);
   return data;
