@@ -1,0 +1,2 @@
+export WUNDERGROUND_STATION_ID="KRICRANS68"
+export WUNDERGROUND_API_KEY="op://tech/Weather Underground API/credential"
