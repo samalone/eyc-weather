@@ -9,7 +9,8 @@ import {
   STATION_PROVIDENCE,
 } from './src/noaa.js';
 import { StationCache } from './src/cache.js';
-import { getConditions, getForecast } from './src/nws.js';
+import { getForecast } from './src/nws.js';
+import { getCurrentConditions } from './src/conditions.js';
 import { getAstroEvents, getDaylight, nowLocal } from './src/astro.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -155,10 +156,10 @@ app.get(bp('/api/daylight'), (_req, res) => {
   }
 });
 
-/** Current weather conditions from NWS (KPVD). */
+/** Current weather conditions — WU (KRICRANS68) preferred, NWS (KPVD) fallback. */
 app.get(bp('/api/conditions'), async (_req, res) => {
   try {
-    const conditions = await getConditions();
+    const conditions = await getCurrentConditions();
     res.json(conditions);
   } catch (err) {
     console.error('[api] /api/conditions error:', err);
