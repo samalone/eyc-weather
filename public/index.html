@@ -684,17 +684,17 @@ function buildClockSVG() {
   moonGroup.style.transformOrigin = `${cx}px ${moonCY}px`;
   moonGroup.style.transition = 'transform 1s ease-in-out';
 
-  // Base circle — the unlit (dark) side of the moon
+  // Base circle — the lit side of the moon
   moonGroup.appendChild(el('circle', {
     cx, cy: moonCY, r: moonR,
-    fill: 'var(--color-moon-dark)',
+    fill: 'var(--color-moon-lit)',
   }));
 
-  // Lit portion at full opacity (path updated dynamically)
+  // Dark portion at full opacity (path updated dynamically)
   moonGroup.appendChild(el('path', {
     id: 'moon-phase-path',
     d: '',
-    fill: 'var(--color-moon-lit)',
+    fill: 'var(--color-moon-dark)',
   }));
 
   // Thin outline for contrast (visible in light mode, transparent in dark)
