@@ -32,21 +32,21 @@ Base URL: `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter`
 
 Common query params: `date=latest`, `units=english`, `time_zone=lst_ldt`, `format=json`
 
-### Weather Underground PWS API (API key required) — DEFERRED
+### Weather Underground PWS API (API key required)
 
 Base URL: `https://api.weather.com/v2/pws/observations/current`
 
-**Station KRICRANS86** — Private station operated by an EYC member
+**Station KRICRANS68** — "Edgewood Yacht Club" private station in Cranston, RI (41.78 N, -71.39 W), operated by an EYC member
 
-Query params: `stationId=KRICRANS86`, `format=json`, `units=e`, `numericPrecision=decimal`, `apiKey=<key>`
+Query params: `stationId=KRICRANS68`, `format=json`, `units=e`, `numericPrecision=decimal`, `apiKey=<key>`
 
 Rate limits: 1,500 calls/day, 30 calls/min.
 
-Provides: temperature, humidity, dew point, wind (speed/dir/gust), pressure, precipitation rate & total, solar radiation, UV index.
+Provides: temperature, humidity, dew point, wind (speed/dir/gust), pressure, precipitation rate & total, solar radiation, UV index. Note: the KRICRANS68 unit (a myAcuRite) reports `solarRadiation` and `uv` as `null` — it has no solar/UV sensor.
 
-The API key must be obtained from a Weather Underground account that owns a contributing PWS. Store it in the `WUNDERGROUND_API_KEY` environment variable.
+The API key must be obtained from a Weather Underground account that owns a contributing PWS. Store it in the `WUNDERGROUND_API_KEY` environment variable (station ID in `WUNDERGROUND_STATION_ID`, default `KRICRANS68`).
 
-> **Status:** Not yet integrated. Waiting to identify the station owner and obtain an API key. Build the app with NOAA data first; add WU as an enhancement later.
+> **Status:** Integrated. `src/wunderground.js` fetches/caches the current observation; `src/conditions.js` orchestrates the `/api/conditions` card — it **favors WU** for local temp/wind/humidity/dew point/pressure/precip, borrows the sky condition & description from NWS (WU has none), and **falls back entirely to NWS** when the WU station is offline, stale (>30 min), or the key is missing. The wind compass also plots WU as a second source: `getWuWind()` serves the WU station's last hour of rapid observations (`observations/all/1day`, filtered to 60 min) via `/api/observations/wunderground/wind`. (Note: the KRICRANS68 wind vane has a friction set-screw that slips, so its **direction is unreliable** — the PWS is currently shown **speed-only**: omitted from the compass and listed without a heading in the legend, via the `speedOnly` flag in `WIND_SOURCES` (`public/index.html`). Its speed is trustworthy. The fix is mechanical — tighten the set-screw at the station — after which drop `speedOnly` to restore the direction trail. `WIND_DIR_OFFSET_DEG` in `wunderground.js` is kept at 0.)
 
 ## Environment Variables
 

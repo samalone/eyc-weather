@@ -188,14 +188,36 @@ header p {
 
 /* ── Wind info text ────────────────────────────────────────────────────── */
 .wind-info {
-  text-align: center;
-  font-size: 1.35rem;
-  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: center;
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.wind-info .wind-source {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.wind-info .wind-swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  flex: none;
+  align-self: center;
+}
+
+.wind-info .wind-source-label {
+  color: var(--color-text-dim);
+  font-size: 0.9rem;
 }
 
 .wind-info .wind-current {
   font-weight: 600;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   color: var(--color-accent);
 }
 
@@ -690,7 +712,7 @@ function buildClockSVG() {
     fill: 'var(--color-moon-dark)',
   }));
 
-  // Lit portion at full opacity (path updated dynamically)
+  // Illuminated portion, drawn on top (path updated dynamically)
   moonGroup.appendChild(el('path', {
     id: 'moon-phase-path',
     d: '',
@@ -830,39 +852,29 @@ function moonPhase(date = new Date()) {
  * @returns {string} SVG path d attribute
  */
 function moonPhasePath(phase, mx, my, r) {
-  // Terminator curvature: +1 at new, 0 at quarters, −1 at full
-  const sweep = Math.cos(phase * 2 * Math.PI);
-  const rx = Math.abs(sweep) * r;
-
   const top = `${mx} ${my - r}`;
   const bot = `${mx} ${my + r}`;
 
-  if (phase <= 0) {
-    // New moon — entirely dark
-    return '';
-  }
-  if (phase >= 1) {
-    // Also new moon (cycle wrap)
-    return '';
-  }
+  // New moon — nothing illuminated.
+  if (phase <= 0 || phase >= 1) return '';
+  // Full moon — the whole disc is illuminated.
   if (Math.abs(phase - 0.5) < 0.001) {
-    // Full moon — full circle
     return `M ${mx} ${my - r} A ${r} ${r} 0 1 0 ${mx} ${my + r} A ${r} ${r} 0 1 0 ${mx} ${my - r}`;
   }
 
-  if (phase < 0.25) {
-    // Waxing crescent: small right-side lit
-    return `M ${top} A ${r} ${r} 0 0 1 ${bot} A ${rx} ${r} 0 0 1 ${top}`;
-  } else if (phase < 0.5) {
-    // Waxing gibbous: large right-side lit
-    return `M ${top} A ${r} ${r} 0 0 1 ${bot} A ${rx} ${r} 0 0 0 ${top}`;
-  } else if (phase < 0.75) {
-    // Waning gibbous: large left-side lit
-    return `M ${top} A ${r} ${r} 0 0 0 ${bot} A ${rx} ${r} 0 0 1 ${top}`;
-  } else {
-    // Waning crescent: small left-side lit
-    return `M ${top} A ${r} ${r} 0 0 0 ${bot} A ${rx} ${r} 0 0 0 ${top}`;
-  }
+  // The illuminated region is bounded by two arcs sharing the top & bottom
+  // poles: the lit limb (a half-circle of radius r) and the terminator (a
+  // half-ellipse whose x-radius collapses to 0 at the quarters).
+  //
+  // Northern-hemisphere convention: the right limb lights up while waxing,
+  // the left limb while waning. The terminator's bulge flips between crescent
+  // (<50% lit) and gibbous (>50% lit).
+  const waxing = phase < 0.5;
+  const limbSweep = waxing ? 1 : 0;
+  const rx = Math.abs(Math.cos(phase * 2 * Math.PI)) * r;
+  const termSweep = waxing ? (phase < 0.25 ? 0 : 1) : (phase < 0.75 ? 0 : 1);
+
+  return `M ${top} A ${r} ${r} 0 0 ${limbSweep} ${bot} A ${rx} ${r} 0 0 ${termSweep} ${top}`;
 }
 
 /** Update the moon phase disc on the tide clock hand. */
@@ -1323,10 +1335,18 @@ async function refreshTideGraph() {
 
 // ── Wind Compass ────────────────────────────────────────────────────────
 
-/** Wind source definitions.  Each gets its own hue on the compass. */
+/**
+ * Wind source definitions.  Each gets its own hue on the compass.
+ *
+ * `speedOnly`: the station's wind speed is trustworthy but its direction is
+ * not, so it is omitted from the compass (which is a direction plot) and the
+ * legend shows speed only. The EYC PWS vane has a friction set-screw that
+ * slips, so its heading drifts unpredictably. Re-enable direction (drop the
+ * flag) once the screw is tightened — see the note on WIND_DIR_OFFSET_DEG.
+ */
 const WIND_SOURCES = [
   { station: '8453662', label: 'NOAA Providence', hue: 250 },
-  // Future: { station: 'wunderground', label: 'EYC PWS', hue: 30 },
+  { station: 'wunderground', label: 'EYC PWS', hue: 30, speedOnly: true },
 ];
 
 /** Fetch wind observations for a single station. */
@@ -1539,6 +1559,12 @@ function buildCompassSVG(observations) {
   // presentation attributes don't resolve var() inside oklch().
   const count = observations.length;
 
+  // The most recent observation index for each source — those get an endpoint
+  // dot, so every trail (not just whichever sorts globally last) is marked.
+  const newestIndexByStation = new Map();
+  observations.forEach((obs, i) => newestIndexByStation.set(obs.station, i));
+  const dotIndices = new Set(newestIndexByStation.values());
+
   for (let i = 0; i < count; i++) {
     const obs = observations[i];
     const alpha = count === 1 ? 1 : 0.2 + 0.8 * (i / (count - 1));
@@ -1558,8 +1584,8 @@ function buildCompassSVG(observations) {
     line.style.stroke = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${obs.hue} / ${alpha.toFixed(2)})`;
     svg.appendChild(line);
 
-    // Small dot at the gust end of the newest observation
-    if (i === count - 1) {
+    // Small dot at the gust end of each source's newest observation
+    if (dotIndices.has(i)) {
       const dot = el('circle', { cx: p2.x, cy: p2.y, r: 4 });
       dot.style.fill = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${obs.hue})`;
       svg.appendChild(dot);
@@ -1582,22 +1608,46 @@ function updateWindInfo(observations) {
   if (!infoEl || !observations.length) return;
 
   infoEl.hidden = false;
-  const latest = observations[observations.length - 1];
 
-  const speed = latest.speed.toFixed(1);
-  const gust = latest.gust.toFixed(1);
-  const speedStr = speed === gust
-    ? `${speed} kt`
-    : `${speed} – ${gust} kt`;
+  // Latest observation per source (observations are sorted oldest→newest,
+  // so the last one seen for each station is its most recent).
+  const latestByStation = new Map();
+  for (const obs of observations) {
+    latestByStation.set(obs.station, obs);
+  }
 
-  infoEl.innerHTML = `
-    <div class="wind-current">${latest.dirLabel} ${speedStr}</div>
-  `;
+  // Render one legend row per configured source that has data, in order.
+  const rows = WIND_SOURCES
+    .filter((src) => latestByStation.has(src.station))
+    .map((src) => {
+      const latest = latestByStation.get(src.station);
+      const speed = latest.speed.toFixed(1);
+      const gust = latest.gust.toFixed(1);
+      const speedStr = speed === gust ? `${speed} kt` : `${speed} – ${gust} kt`;
+      const swatch = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${src.hue})`;
+      // Speed-only sources (unreliable direction) omit the direction label.
+      const reading = src.speedOnly ? speedStr : `${latest.dirLabel} ${speedStr}`;
+      return `
+        <div class="wind-source">
+          <span class="wind-swatch" style="background:${swatch}"></span>
+          <span class="wind-source-label">${src.label}</span>
+          <span class="wind-current">${reading}</span>
+        </div>
+      `;
+    })
+    .join('');
+
+  infoEl.innerHTML = rows;
 }
 
 // ── Wind state & update ─────────────────────────────────────────────────
 
 let windObservations = [];
+
+/** Stations whose direction is untrusted — excluded from the compass plot. */
+const SPEED_ONLY_STATIONS = new Set(
+  WIND_SOURCES.filter((s) => s.speedOnly).map((s) => s.station),
+);
 
 async function refreshWind() {
   try {
@@ -1605,11 +1655,16 @@ async function refreshWind() {
     if (windObservations.length === 0) {
       console.warn('[wind] No observations after merge — compass will be empty');
     }
+    // The compass is a direction plot, so omit speed-only sources from it;
+    // the legend still reports their speed.
+    const compassObs = windObservations.filter(
+      (o) => !SPEED_ONLY_STATIONS.has(o.station),
+    );
     const container = document.getElementById('wind-compass-container');
     container.innerHTML = '';
-    container.appendChild(buildCompassSVG(windObservations));
+    container.appendChild(buildCompassSVG(compassObs));
     updateWindInfo(windObservations);
-    console.log(`[wind] Compass rebuilt with ${windObservations.length} observations`);
+    console.log(`[wind] Compass rebuilt with ${compassObs.length} observations`);
   } catch (err) {
     console.error('[wind] refreshWind failed:', err);
   }
