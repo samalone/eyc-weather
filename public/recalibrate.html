@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>EYC Weather — PWS Wind Recalibration</title>
+  <style>
+    :root {
+      --color-bg:        oklch(0.97 0.005 250);
+      --color-surface:   oklch(1.00 0 0);
+      --color-text:      oklch(0.20 0.02 250);
+      --color-text-dim:  oklch(0.45 0.02 250);
+      --color-border:    oklch(0.88 0.01 250);
+      --color-accent:    oklch(0.55 0.15 250);
+      --color-good:      oklch(0.55 0.13 150);
+      --color-warn:      oklch(0.62 0.15 70);
+      --color-bad:       oklch(0.55 0.18 25);
+      --card-shadow:     0 1px 3px oklch(0 0 0 / 0.08), 0 4px 12px oklch(0 0 0 / 0.06);
+      --radius:          12px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --color-bg:        oklch(0.15 0.01 250);
+        --color-surface:   oklch(0.22 0.015 250);
+        --color-text:      oklch(0.90 0.01 250);
+        --color-text-dim:  oklch(0.60 0.015 250);
+        --color-border:    oklch(0.32 0.015 250);
+        --color-accent:    oklch(0.65 0.15 250);
+        --color-good:      oklch(0.68 0.13 150);
+        --color-warn:      oklch(0.75 0.15 75);
+        --color-bad:       oklch(0.65 0.18 25);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--color-bg);
+      color: var(--color-text);
+      margin: 0;
+      padding: 1.5rem 1rem 3rem;
+      line-height: 1.5;
+    }
+    main { max-width: 40rem; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+    .subtitle { color: var(--color-text-dim); margin: 0 0 1.5rem; font-size: 0.9rem; }
+    .card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      box-shadow: var(--card-shadow);
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .card h2 { font-size: 1rem; margin: 0 0 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-dim); }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 1rem; margin: 0; }
+    dt { color: var(--color-text-dim); }
+    dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+    dd.big { font-size: 1.15rem; font-weight: 600; }
+    label { display: block; font-size: 0.85rem; color: var(--color-text-dim); margin-bottom: 0.35rem; }
+    input[type="password"], input[type="text"] {
+      width: 100%;
+      padding: 0.6rem 0.7rem;
+      font-size: 1rem;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-bg);
+      color: var(--color-text);
+    }
+    .btn-row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.5rem; }
+    button {
+      font: inherit;
+      font-weight: 600;
+      padding: 0.6rem 1.1rem;
+      border-radius: 8px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      cursor: pointer;
+    }
+    button.primary { background: var(--color-accent); border-color: var(--color-accent); color: oklch(1 0 0); }
+    button.danger { color: var(--color-bad); border-color: var(--color-bad); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status { margin-top: 1rem; padding: 0.7rem 0.9rem; border-radius: 8px; font-size: 0.9rem; display: none; }
+    .status.show { display: block; }
+    .status.info { background: oklch(from var(--color-accent) l c h / 0.12); }
+    .status.good { background: oklch(from var(--color-good) l c h / 0.15); color: var(--color-good); }
+    .status.bad  { background: oklch(from var(--color-bad) l c h / 0.15); color: var(--color-bad); }
+    .warn-list { margin: 0.75rem 0 0; padding-left: 1.1rem; color: var(--color-warn); font-size: 0.9rem; }
+    .warn-list:empty { display: none; }
+    .conf { font-weight: 600; }
+    .conf.good { color: var(--color-good); }
+    .conf.warn { color: var(--color-warn); }
+    .conf.bad  { color: var(--color-bad); }
+    .muted { color: var(--color-text-dim); font-size: 0.85rem; }
+    .delta-pos { color: var(--color-good); }
+    a { color: var(--color-accent); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PWS Wind Recalibration</h1>
+  <p class="subtitle">
+    Corrects the EYC PWS wind-direction offset (slipped vane set-screw) by
+    comparing it against NOAA Providence. Best run during a steady, strong,
+    unobstructed breeze. The calibration lives only in the running server — a
+    restart clears it.
+  </p>
+
+  <!-- Current state -->
+  <section class="card">
+    <h2>Current calibration</h2>
+    <dl id="current-dl">
+      <dt>Status</dt><dd id="cur-status">—</dd>
+    </dl>
+  </section>
+
+  <!-- Preview -->
+  <section class="card">
+    <h2>Step 1 — Preview</h2>
+    <p class="muted">
+      Samples the last hour of both stations and proposes an offset. No change
+      is made yet.
+    </p>
+    <div class="btn-row">
+      <button id="preview-btn" class="primary">Preview recalibration</button>
+    </div>
+
+    <div id="preview-result" hidden>
+      <dl style="margin-top: 1rem;">
+        <dt>Proposed offset</dt><dd class="big" id="pv-offset">—</dd>
+        <dt>Change vs. current</dt><dd id="pv-delta">—</dd>
+        <dt>Confidence</dt><dd id="pv-confidence">—</dd>
+        <dt>Samples used</dt><dd id="pv-samples">—</dd>
+        <dt>NOAA (reference)</dt><dd id="pv-ref">—</dd>
+        <dt>EYC PWS (raw)</dt><dd id="pv-pws">—</dd>
+      </dl>
+      <ul class="warn-list" id="pv-warnings"></ul>
+    </div>
+  </section>
+
+  <!-- Apply -->
+  <section class="card">
+    <h2>Step 2 — Apply</h2>
+    <label for="secret">Recalibration secret</label>
+    <input type="password" id="secret" autocomplete="off" placeholder="shared secret" />
+    <div class="btn-row">
+      <button id="save-btn" class="primary" disabled>Save calibration</button>
+      <button id="reset-btn" class="danger">Reset to uncalibrated</button>
+    </div>
+    <div class="status" id="status"></div>
+  </section>
+
+  <p class="muted"><a href="./">← Back to weather</a></p>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let lastPreview = null;
+
+  function fmtDeg(d) {
+    return d == null ? '—' : `${Number(d).toFixed(0)}°`;
+  }
+  function shortestDelta(target, from) {
+    // signed smallest-angle difference target - from, in (-180, 180]
+    let d = ((target - from + 540) % 360) - 180;
+    return d;
+  }
+
+  function confClass(r) {
+    if (r >= 0.97) return 'good';
+    if (r >= 0.90) return 'warn';
+    return 'bad';
+  }
+  function confWord(r) {
+    if (r >= 0.97) return 'excellent';
+    if (r >= 0.90) return 'good';
+    if (r >= 0.80) return 'fair';
+    return 'poor';
+  }
+
+  function showStatus(kind, msg) {
+    const el = $('status');
+    el.className = `status show ${kind}`;
+    el.textContent = msg;
+  }
+  function clearStatus() {
+    $('status').className = 'status';
+  }
+
+  async function loadCurrent() {
+    try {
+      const r = await fetch('api/calibration');
+      const c = await r.json();
+      renderCurrent(c);
+    } catch (e) {
+      $('cur-status').textContent = 'unavailable';
+    }
+  }
+
+  function renderCurrent(c) {
+    const dl = $('current-dl');
+    if (!c.active) {
+      dl.innerHTML = '<dt>Status</dt><dd>Uncalibrated (direction hidden, offset 0°)</dd>';
+      return;
+    }
+    const when = c.calibratedAt ? new Date(c.calibratedAt).toLocaleString() : '—';
+    const r = c.confidence;
+    dl.innerHTML = `
+      <dt>Status</dt><dd>Calibrated</dd>
+      <dt>Offset</dt><dd class="big">${fmtDeg(c.offsetDeg)}</dd>
+      <dt>Confidence</dt><dd>${r == null ? '—' : (r * 100).toFixed(0) + '%'}</dd>
+      <dt>Samples</dt><dd>${c.sampleCount ?? '—'}</dd>
+      <dt>PWS wind then</dt><dd>${c.meanSpeedKt == null ? '—' : c.meanSpeedKt.toFixed(1) + ' kt'}</dd>
+      <dt>Calibrated at</dt><dd>${when}</dd>
+    `;
+  }
+
+  function buildWarnings(p) {
+    const warns = [];
+    if (p.sampleCount < 4) {
+      warns.push(`Only ${p.sampleCount} matching sample(s) — result may be unreliable.`);
+    }
+    if (p.confidence < 0.90) {
+      warns.push('Low agreement between samples — wind is variable or the two '
+        + 'sites disagree. Recalibrate during a steadier breeze.');
+    }
+    const spd = Math.min(p.pwsMeanSpeedKt ?? 0, p.referenceMeanSpeedKt ?? 0);
+    if (spd < 8) {
+      warns.push(`Wind is light (~${spd.toFixed(0)} kt) — direction is noisy. `
+        + 'A strong breeze gives a cleaner offset.');
+    }
+    return warns;
+  }
+
+  async function doPreview() {
+    clearStatus();
+    $('preview-btn').disabled = true;
+    $('preview-btn').textContent = 'Sampling…';
+    try {
+      const r = await fetch('api/recalibrate/preview');
+      const p = await r.json();
+      if (!r.ok || !p.ok) {
+        lastPreview = null;
+        $('save-btn').disabled = true;
+        $('preview-result').hidden = true;
+        showStatus('bad', p.reason || p.error || 'Could not compute a calibration.');
+        return;
+      }
+      lastPreview = p;
+      renderPreview(p);
+      $('preview-result').hidden = false;
+      $('save-btn').disabled = false;
+    } catch (e) {
+      showStatus('bad', `Preview failed: ${e.message}`);
+    } finally {
+      $('preview-btn').disabled = false;
+      $('preview-btn').textContent = 'Preview recalibration';
+    }
+  }
+
+  function renderPreview(p) {
+    $('pv-offset').textContent = fmtDeg(p.offsetDeg);
+
+    if (p.current && p.current.active) {
+      const d = shortestDelta(p.offsetDeg, p.current.offsetDeg);
+      const sign = d > 0 ? '+' : '';
+      $('pv-delta').innerHTML =
+        `${sign}${d.toFixed(0)}° <span class="muted">(was ${fmtDeg(p.current.offsetDeg)})</span>`;
+    } else {
+      $('pv-delta').innerHTML = '<span class="muted">currently uncalibrated</span>';
+    }
+
+    const cls = confClass(p.confidence);
+    $('pv-confidence').innerHTML =
+      `<span class="conf ${cls}">${(p.confidence * 100).toFixed(0)}% — ${confWord(p.confidence)}</span>`;
+    $('pv-samples').textContent = `${p.sampleCount} (≥ ${p.minSpeedKt} kt, last ${p.windowMinutes} min)`;
+    $('pv-ref').textContent =
+      `${p.referenceMeanDirLabel} ${fmtDeg(p.referenceMeanDir)} @ ${p.referenceMeanSpeedKt.toFixed(1)} kt`;
+    $('pv-pws').textContent =
+      `${p.pwsMeanDirRawLabel} ${fmtDeg(p.pwsMeanDirRaw)} @ ${p.pwsMeanSpeedKt.toFixed(1)} kt`;
+
+    const warns = buildWarnings(p);
+    $('pv-warnings').innerHTML = warns.map((w) => `<li>${w}</li>`).join('');
+  }
+
+  async function doSave() {
+    if (!lastPreview) return;
+    const secret = $('secret').value;
+    if (!secret) { showStatus('bad', 'Enter the recalibration secret.'); return; }
+    $('save-btn').disabled = true;
+    try {
+      const r = await fetch('api/recalibrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Recalibrate-Secret': secret },
+        body: JSON.stringify(lastPreview),
+      });
+      const c = await r.json();
+      if (!r.ok) {
+        showStatus('bad', c.error || `Save failed (HTTP ${r.status}).`);
+        return;
+      }
+      renderCurrent(c);
+      showStatus('good', `Saved — PWS direction offset is now ${fmtDeg(c.offsetDeg)}.`);
+    } catch (e) {
+      showStatus('bad', `Save failed: ${e.message}`);
+    } finally {
+      $('save-btn').disabled = false;
+    }
+  }
+
+  async function doReset() {
+    const secret = $('secret').value;
+    if (!secret) { showStatus('bad', 'Enter the recalibration secret.'); return; }
+    $('reset-btn').disabled = true;
+    try {
+      const r = await fetch('api/recalibrate/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Recalibrate-Secret': secret },
+        body: JSON.stringify({}),
+      });
+      const c = await r.json();
+      if (!r.ok) {
+        showStatus('bad', c.error || `Reset failed (HTTP ${r.status}).`);
+        return;
+      }
+      renderCurrent(c);
+      lastPreview = null;
+      $('preview-result').hidden = true;
+      $('save-btn').disabled = true;
+      showStatus('info', 'Calibration cleared — PWS direction is hidden again.');
+    } catch (e) {
+      showStatus('bad', `Reset failed: ${e.message}`);
+    } finally {
+      $('reset-btn').disabled = false;
+    }
+  }
+
+  $('preview-btn').addEventListener('click', doPreview);
+  $('save-btn').addEventListener('click', doSave);
+  $('reset-btn').addEventListener('click', doReset);
+  loadCurrent();
+</script>
+</body>
+</html>

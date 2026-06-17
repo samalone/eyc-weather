@@ -1343,8 +1343,12 @@ async function refreshTideGraph() {
  * `speedOnly`: the station's wind speed is trustworthy but its direction is
  * not, so it is omitted from the compass (which is a direction plot) and the
  * legend shows speed only. The EYC PWS vane has a friction set-screw that
- * slips, so its heading drifts unpredictably. Re-enable direction (drop the
- * flag) once the screw is tightened — see the note on WIND_DIR_OFFSET_DEG.
+ * slips, so its heading drifts unpredictably.
+ *
+ * This is overridden at runtime by `wuDirCalibrated`: once an offset has been
+ * applied via the /recalibrate page (GET api/calibration → `active`), the PWS
+ * direction is trusted again and shown on the compass and in the legend. A pod
+ * restart clears the calibration, reverting to speed-only.
  */
 const WIND_SOURCES = [
   { station: '8453662', label: 'NOAA Providence', hue: 250 },
@@ -1364,14 +1368,24 @@ async function fetchWindData(station) {
   if (!json.data || json.data.length === 0) {
     console.warn(`[wind] Station ${station}: empty data array`);
   }
-  return json.data.map(d => ({
-    time: new Date(d.time),
-    speed: parseFloat(d.s) || 0,
-    gust: parseFloat(d.g) || 0,
-    dir: parseFloat(d.d) || 0,
-    dirLabel: d.dr || '',
-    station,
-  }));
+  return json.data.map(d => {
+    // Preserve a missing direction as null (don't coerce to 0° / due north):
+    // such a sample is excluded from the compass but its speed still shows in
+    // the legend.
+    const dirNum = d.d == null ? null : parseFloat(d.d);
+    const speed = parseFloat(d.s) || 0;
+    const gustNum = parseFloat(d.g);
+    return {
+      time: new Date(d.time),
+      speed,
+      // Fall back to the speed (not 0) for a missing gust, matching the
+      // server: a 0 gust would draw the gust spoke inward past the speed point.
+      gust: Number.isFinite(gustNum) ? gustNum : speed,
+      dir: Number.isFinite(dirNum) ? dirNum : null,
+      dirLabel: d.dr || '',
+      station,
+    };
+  });
 }
 
 /**
@@ -1627,8 +1641,12 @@ function updateWindInfo(observations) {
       const gust = latest.gust.toFixed(1);
       const speedStr = speed === gust ? `${speed} kt` : `${speed} – ${gust} kt`;
       const swatch = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${src.hue})`;
-      // Speed-only sources (unreliable direction) omit the direction label.
-      const reading = src.speedOnly ? speedStr : `${latest.dirLabel} ${speedStr}`;
+      // Sources with hidden direction (speed-only and not calibrated) omit the
+      // direction label, as does any latest sample that simply has no heading.
+      // A recalibrated PWS shows its (corrected) heading.
+      const reading = isDirectionHidden(src.station) || !latest.dirLabel
+        ? speedStr
+        : `${latest.dirLabel} ${speedStr}`;
       return `
         <div class="wind-source">
           <span class="wind-swatch" style="background:${swatch}"></span>
@@ -1646,21 +1664,53 @@ function updateWindInfo(observations) {
 
 let windObservations = [];
 
-/** Stations whose direction is untrusted — excluded from the compass plot. */
+/**
+ * Whether the EYC PWS wind direction has been recalibrated this server run.
+ * When true, the speed-only sources' directions are trusted again (the only
+ * speed-only source is the PWS, whose offset the /recalibrate page corrects).
+ * Refreshed from api/calibration on each wind refresh.
+ */
+let wuDirCalibrated = false;
+
+/** Stations whose direction is untrusted by default (overridable by calibration). */
 const SPEED_ONLY_STATIONS = new Set(
   WIND_SOURCES.filter((s) => s.speedOnly).map((s) => s.station),
 );
 
+/** True if this source's direction should be hidden on the compass/legend. */
+function isDirectionHidden(station) {
+  if (!SPEED_ONLY_STATIONS.has(station)) return false;
+  // The calibration only restores the EYC PWS direction; any other speed-only
+  // source stays hidden regardless of calibration state.
+  if (station === 'wunderground') return !wuDirCalibrated;
+  return true;
+}
+
 async function refreshWind() {
   try {
-    windObservations = await fetchAllWind();
+    // Fetch the wind trail and the calibration state in parallel — the
+    // calibration (applied via the /recalibrate page, in-memory on the server)
+    // only gates whether the PWS direction is shown, so it must not block the
+    // data fetch. Both have their own error handling, so Promise.all is safe.
+    const [calState, obs] = await Promise.all([
+      fetch('api/calibration')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch((e) => { console.warn('[wind] calibration state fetch failed:', e); return null; }),
+      fetchAllWind(),
+    ]);
+    // Default to false on a failed/missing fetch so a transient error can't
+    // leave a stale "calibrated" state showing an untrusted PWS direction.
+    wuDirCalibrated = !!(calState && calState.active);
+
+    windObservations = obs;
     if (windObservations.length === 0) {
       console.warn('[wind] No observations after merge — compass will be empty');
     }
-    // The compass is a direction plot, so omit speed-only sources from it;
-    // the legend still reports their speed.
+    // The compass is a direction plot, so omit sources whose direction is
+    // hidden and individual samples that have no direction; the legend still
+    // reports their speed.
     const compassObs = windObservations.filter(
-      (o) => !SPEED_ONLY_STATIONS.has(o.station),
+      (o) => !isDirectionHidden(o.station) && o.dir != null,
     );
     const container = document.getElementById('wind-compass-container');
     container.innerHTML = '';
