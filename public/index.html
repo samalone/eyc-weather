@@ -1343,8 +1343,12 @@ async function refreshTideGraph() {
  * `speedOnly`: the station's wind speed is trustworthy but its direction is
  * not, so it is omitted from the compass (which is a direction plot) and the
  * legend shows speed only. The EYC PWS vane has a friction set-screw that
- * slips, so its heading drifts unpredictably. Re-enable direction (drop the
- * flag) once the screw is tightened — see the note on WIND_DIR_OFFSET_DEG.
+ * slips, so its heading drifts unpredictably.
+ *
+ * This is overridden at runtime by `wuDirCalibrated`: once an offset has been
+ * applied via the /recalibrate page (GET api/calibration → `active`), the PWS
+ * direction is trusted again and shown on the compass and in the legend. A pod
+ * restart clears the calibration, reverting to speed-only.
  */
 const WIND_SOURCES = [
   { station: '8453662', label: 'NOAA Providence', hue: 250 },
@@ -1627,8 +1631,11 @@ function updateWindInfo(observations) {
       const gust = latest.gust.toFixed(1);
       const speedStr = speed === gust ? `${speed} kt` : `${speed} – ${gust} kt`;
       const swatch = `oklch(var(--wind-trail-l) var(--wind-trail-c) ${src.hue})`;
-      // Speed-only sources (unreliable direction) omit the direction label.
-      const reading = src.speedOnly ? speedStr : `${latest.dirLabel} ${speedStr}`;
+      // Sources with hidden direction (speed-only and not calibrated) omit the
+      // direction label. A recalibrated PWS shows its (corrected) heading.
+      const reading = isDirectionHidden(src.station)
+        ? speedStr
+        : `${latest.dirLabel} ${speedStr}`;
       return `
         <div class="wind-source">
           <span class="wind-swatch" style="background:${swatch}"></span>
@@ -1646,21 +1653,43 @@ function updateWindInfo(observations) {
 
 let windObservations = [];
 
-/** Stations whose direction is untrusted — excluded from the compass plot. */
+/**
+ * Whether the EYC PWS wind direction has been recalibrated this server run.
+ * When true, the speed-only sources' directions are trusted again (the only
+ * speed-only source is the PWS, whose offset the /recalibrate page corrects).
+ * Refreshed from api/calibration on each wind refresh.
+ */
+let wuDirCalibrated = false;
+
+/** Stations whose direction is untrusted by default (overridable by calibration). */
 const SPEED_ONLY_STATIONS = new Set(
   WIND_SOURCES.filter((s) => s.speedOnly).map((s) => s.station),
 );
 
+/** True if this source's direction should be hidden (speed-only and not calibrated). */
+function isDirectionHidden(station) {
+  return SPEED_ONLY_STATIONS.has(station) && !wuDirCalibrated;
+}
+
 async function refreshWind() {
   try {
+    // Pick up any recalibration applied via the /recalibrate page (in-memory
+    // on the server, so this reflects the current pod's state).
+    try {
+      const r = await fetch('api/calibration');
+      if (r.ok) wuDirCalibrated = !!(await r.json()).active;
+    } catch (e) {
+      console.warn('[wind] calibration state fetch failed:', e);
+    }
+
     windObservations = await fetchAllWind();
     if (windObservations.length === 0) {
       console.warn('[wind] No observations after merge — compass will be empty');
     }
-    // The compass is a direction plot, so omit speed-only sources from it;
-    // the legend still reports their speed.
+    // The compass is a direction plot, so omit sources whose direction is
+    // hidden; the legend still reports their speed.
     const compassObs = windObservations.filter(
-      (o) => !SPEED_ONLY_STATIONS.has(o.station),
+      (o) => !isDirectionHidden(o.station),
     );
     const container = document.getElementById('wind-compass-container');
     container.innerHTML = '';

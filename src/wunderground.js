@@ -34,24 +34,92 @@ const CLOCK_SKEW_MS = 5 * 60 * 1000;
 const WIND_WINDOW_MS = 60 * 60 * 1000;
 
 /**
- * Correction applied to WU wind directions, in degrees.
- *
- * Kept at 0: the KRICRANS68 vane has a friction set-screw that slips, so its
- * heading drifts unpredictably (an earlier ~180° match with NOAA turned out to
- * be coincidence, not a fixed mounting offset). Because the direction can't be
- * trusted, the PWS is currently shown speed-only — see the `speedOnly` flag in
- * WIND_SOURCES (public/index.html). The real fix is mechanical: tighten the
- * set-screw at the station. This offset stays here for when the hardware is
- * sound and direction display is re-enabled.
+ * Minimum wind speed (knots) for a sample to count toward a recalibration.
+ * Below this, vane direction is dominated by noise, so light-wind samples
+ * would only pollute the offset estimate.
  */
-const WIND_DIR_OFFSET_DEG = 0;
+const MIN_CALIB_SPEED_KT = 5;
 
-/** Apply WIND_DIR_OFFSET_DEG, wrapping into [0, 360). Null-safe. */
+/**
+ * How close in time a WU sample and a reference sample must be to be paired
+ * for recalibration. Both sources report every few minutes, so a 7-minute
+ * window reliably finds the nearest neighbour without matching across a gap.
+ */
+const MATCH_TOLERANCE_MS = 7 * 60 * 1000;
+
+/**
+ * Runtime correction applied to WU wind directions, in degrees, plus the
+ * provenance of how it was derived.
+ *
+ * Why this is runtime state and not a constant: the KRICRANS68 vane has a
+ * friction set-screw that slips, so its heading picks up an unpredictable —
+ * but, between slips, *constant* — rotational offset. The "Recalibrate" page
+ * estimates that offset by comparing the PWS against the trusted NOAA station
+ * during a steady breeze (see computeRecalibration) and stores it here. The
+ * value lives only in this running process; a restart returns to uncalibrated
+ * (offset 0, direction shown speed-only) and the offset must be re-derived.
+ * That is intentional — there is no durable place to trust a stale calibration
+ * across a re-slip. The real fix is still mechanical: tighten the set-screw.
+ *
+ * `calibratedAt === null` means uncalibrated: offset is 0 (a no-op) and the
+ * frontend keeps the PWS direction hidden (speed-only).
+ */
+let calibration = {
+  offsetDeg: 0,
+  /** @type {string | null} ISO timestamp of the last applied calibration */
+  calibratedAt: null,
+  /** @type {number | null} resultant length r ∈ [0,1] — agreement of samples */
+  confidence: null,
+  /** @type {number | null} matched sample pairs used */
+  sampleCount: null,
+  /** @type {number | null} reference (NOAA) vector-mean direction at cal time */
+  referenceMeanDir: null,
+  /** @type {number | null} PWS raw vector-mean direction at cal time */
+  pwsMeanDirRaw: null,
+  /** @type {number | null} mean PWS wind speed (kt) during the calibration */
+  meanSpeedKt: null,
+};
+
+/** Apply the current calibration offset, wrapping into [0, 360). Null-safe. */
 function correctWindDir(deg) {
   if (deg == null) return null;
   const num = Number(deg);
   if (Number.isNaN(num)) return null;
-  return ((num + WIND_DIR_OFFSET_DEG) % 360 + 360) % 360;
+  return ((num + calibration.offsetDeg) % 360 + 360) % 360;
+}
+
+/**
+ * Parse an Eastern-naive timestamp ("YYYY-MM-DDTHH:MM[:SS]", no offset — the
+ * basis NOAA's lst_ldt and toEasternNaive both use) into milliseconds.
+ *
+ * We append 'Z' and parse as if UTC. The absolute value is therefore wrong by
+ * the Eastern UTC offset, but identically so for every timestamp, so it
+ * cancels when we only ever take *differences* between two such values (as the
+ * recalibration pairing does). This keeps matching deterministic regardless of
+ * the server's timezone, with no DST handling needed inside a 1-hour window.
+ */
+function easternNaiveToMs(naive) {
+  return Date.parse(`${naive}Z`);
+}
+
+/** Vector (circular) mean of a list of directions in degrees. */
+function vectorMeanDeg(anglesDeg) {
+  let sumSin = 0;
+  let sumCos = 0;
+  for (const a of anglesDeg) {
+    const r = (a * Math.PI) / 180;
+    sumSin += Math.sin(r);
+    sumCos += Math.cos(r);
+  }
+  const n = anglesDeg.length || 1;
+  const dir = ((Math.atan2(sumSin, sumCos) * 180) / Math.PI + 360) % 360;
+  return { dir, r: Math.hypot(sumSin, sumCos) / n };
+}
+
+/** Mean of a numeric array (0 for empty). */
+function mean(nums) {
+  if (!nums.length) return 0;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
 // ── Cache state ──────────────────────────────────────────────────────────
@@ -246,16 +314,17 @@ export async function getWuConditions() {
 // ── Wind trail ───────────────────────────────────────────────────────────
 
 /**
- * Fetch the last hour of rapid wind observations and normalize them into the
- * same shape the wind compass consumes for NOAA stations
- * ({ time, s, g, d, dr }, speeds in knots).
+ * Fetch the last hour of rapid wind observations as RAW records
+ * ({ easternNaive, dirRaw, speed, gust }) — directions uncorrected, speeds in
+ * knots. Shared by the compass trail (which applies the calibration offset)
+ * and recalibration (which needs the raw vane headings).
  *
  * Returns `[]` when WU is disabled (no key) or the station is offline (no
- * recent observations) so the source simply drops off the compass.
+ * recent observations).
  *
  * @returns {Promise<object[]>}
  */
-async function fetchWindHistory() {
+async function fetchWuRawWindRecords() {
   const { apiKey, stationId } = wuConfig();
   if (!apiKey) return [];
 
@@ -275,26 +344,44 @@ async function fetchWindHistory() {
   // Filter to the last hour FIRST — the endpoint returns a full day (~288
   // points) but only ~12 are in-window, so we skip parsing/formatting the 95%
   // we'd discard. Keep the parsed ms on each survivor to sort without re-parsing.
+  // Directions here are RAW (uncorrected) — recalibration needs them that way.
   return (json.observations ?? [])
     .map((obs) => ({ obs, ms: Date.parse(obs.obsTimeUtc) }))
     .filter(({ ms }) => !Number.isNaN(ms) && ms >= cutoff)
     .sort((a, b) => a.ms - b.ms)
     .map(({ obs }) => {
       const imp = obs.imperial ?? {};
-      const dir = correctWindDir(obs.winddirAvg);
-      const speed = mphToKnots(imp.windspeedAvg) ?? 0;
       return {
         // Eastern wall-clock time (no offset) to match NOAA's lst_ldt format,
         // so both sources sort consistently regardless of the viewer's TZ.
-        time: toEasternNaive(obs.obsTimeUtc),
-        s: speed,
-        // Fall back to the speed (zero-length gust) rather than 0, which would
-        // draw the gust spoke pointing inward past the speed point.
-        g: mphToKnots(imp.windgustHigh ?? imp.windgustAvg) ?? speed,
-        d: dir ?? 0,
-        dr: compassLabel(dir),
+        easternNaive: toEasternNaive(obs.obsTimeUtc),
+        dirRaw: obs.winddirAvg == null ? null : Number(obs.winddirAvg),
+        speed: mphToKnots(imp.windspeedAvg) ?? 0,
+        gust: mphToKnots(imp.windgustHigh ?? imp.windgustAvg),
       };
     });
+}
+
+/**
+ * Fetch the last hour of rapid wind observations and normalize them into the
+ * same shape the wind compass consumes for NOAA stations
+ * ({ time, s, g, d, dr }, speeds in knots), applying the calibration offset.
+ */
+async function fetchWindHistory() {
+  const raw = await fetchWuRawWindRecords();
+  return raw.map((r) => {
+    const dir = correctWindDir(r.dirRaw);
+    const speed = r.speed ?? 0;
+    return {
+      time: r.easternNaive,
+      s: speed,
+      // Fall back to the speed (zero-length gust) rather than 0, which would
+      // draw the gust spoke pointing inward past the speed point.
+      g: r.gust ?? speed,
+      d: dir ?? 0,
+      dr: compassLabel(dir),
+    };
+  });
 }
 
 /**
@@ -320,4 +407,166 @@ export async function getWuWind() {
   windCache = { data, fetchedAt: now };
   console.log(`[wu] Cached wind trail: ${data.length} observations`);
   return data;
+}
+
+// ── Wind direction recalibration ───────────────────────────────────────────
+
+/**
+ * Estimate the PWS wind-direction offset by comparing the EYC PWS against a
+ * trusted reference station (NOAA Providence) over the last hour.
+ *
+ * Method (per-sample, robust to a wind shift mid-window): each PWS sample is
+ * paired with the nearest reference sample in time; pairs where either station
+ * is below MIN_CALIB_SPEED_KT are dropped (light wind = noisy direction); the
+ * offset is the circular mean of (referenceDir − pwsRawDir) across the pairs.
+ * The resultant length r ∈ [0,1] is returned as `confidence`: near 1 means the
+ * per-sample differences agree tightly (a clean constant offset); low means the
+ * wind was variable or the two sites genuinely disagreed — recalibrate during a
+ * steady, strong breeze for a trustworthy result.
+ *
+ * Does NOT mutate state — callers preview the result, then apply it explicitly.
+ *
+ * @param {{time: string, d: number|string, s: number|string}[]} referenceObs
+ *   Reference wind observations (NOAA `wind` product shape: Eastern-naive
+ *   `time`, direction `d` in degrees, speed `s` in knots).
+ * @param {object[]} [pwsRecords]  Raw PWS records (defaults to a live fetch);
+ *   injectable for testing — shape from fetchWuRawWindRecords().
+ * @returns {Promise<object>} preview — `{ ok, offsetDeg, confidence,
+ *   sampleCount, referenceMeanDir(+Label/Speed), pwsMeanDirRaw(+Label/Speed),
+ *   windowMinutes, minSpeedKt, current }`, or `{ ok: false, reason, ... }`.
+ */
+export async function computeRecalibration(referenceObs, pwsRecords) {
+  const wu = pwsRecords ?? await fetchWuRawWindRecords();
+
+  const ref = (referenceObs ?? [])
+    .map((o) => ({
+      ms: easternNaiveToMs(o.time),
+      dir: o.d == null ? NaN : Number(o.d),
+      speed: o.s == null ? NaN : Number(o.s),
+    }))
+    .filter((o) => !Number.isNaN(o.ms) && !Number.isNaN(o.dir));
+
+  const pairs = [];
+  for (const w of wu) {
+    if (w.dirRaw == null || Number.isNaN(w.dirRaw)) continue;
+    const wms = easternNaiveToMs(w.easternNaive);
+
+    // Nearest reference sample in time.
+    let best = null;
+    let bestDt = Infinity;
+    for (const r of ref) {
+      const dt = Math.abs(r.ms - wms);
+      if (dt < bestDt) { bestDt = dt; best = r; }
+    }
+    if (!best || bestDt > MATCH_TOLERANCE_MS) continue;
+    if (w.speed < MIN_CALIB_SPEED_KT || best.speed < MIN_CALIB_SPEED_KT) continue;
+
+    pairs.push({
+      pwsDir: w.dirRaw, pwsSpeed: w.speed,
+      refDir: best.dir, refSpeed: best.speed,
+    });
+  }
+
+  const base = {
+    windowMinutes: WIND_WINDOW_MS / 60000,
+    minSpeedKt: MIN_CALIB_SPEED_KT,
+    sampleCount: pairs.length,
+    current: getCalibration(),
+  };
+
+  if (pairs.length === 0) {
+    return {
+      ok: false,
+      reason: 'No matching PWS/reference samples above '
+        + `${MIN_CALIB_SPEED_KT} kt in the last ${base.windowMinutes} min. `
+        + 'Try again during a steadier, stronger breeze.',
+      ...base,
+    };
+  }
+
+  // Circular mean of the per-sample (reference − PWS) differences.
+  let sumSin = 0;
+  let sumCos = 0;
+  for (const p of pairs) {
+    const d = ((p.refDir - p.pwsDir) * Math.PI) / 180;
+    sumSin += Math.sin(d);
+    sumCos += Math.cos(d);
+  }
+  const offsetDeg = ((Math.atan2(sumSin, sumCos) * 180) / Math.PI + 360) % 360;
+  const confidence = Math.hypot(sumSin, sumCos) / pairs.length;
+
+  const refMean = vectorMeanDeg(pairs.map((p) => p.refDir));
+  const pwsMean = vectorMeanDeg(pairs.map((p) => p.pwsDir));
+
+  return {
+    ok: true,
+    offsetDeg,
+    confidence,
+    referenceMeanDir: refMean.dir,
+    referenceMeanDirLabel: compassLabel(refMean.dir),
+    referenceMeanSpeedKt: mean(pairs.map((p) => p.refSpeed)),
+    pwsMeanDirRaw: pwsMean.dir,
+    pwsMeanDirRawLabel: compassLabel(pwsMean.dir),
+    pwsMeanSpeedKt: mean(pairs.map((p) => p.pwsSpeed)),
+    ...base,
+  };
+}
+
+/**
+ * Current calibration state for the frontend. `active` is true once an offset
+ * has been applied (vs. the uncalibrated default, where direction is hidden).
+ */
+export function getCalibration() {
+  return {
+    active: calibration.calibratedAt != null,
+    offsetDeg: calibration.offsetDeg,
+    calibratedAt: calibration.calibratedAt,
+    confidence: calibration.confidence,
+    sampleCount: calibration.sampleCount,
+    referenceMeanDir: calibration.referenceMeanDir,
+    pwsMeanDirRaw: calibration.pwsMeanDirRaw,
+    meanSpeedKt: calibration.meanSpeedKt,
+  };
+}
+
+/**
+ * Apply a calibration from a (validated) preview. Stamps `calibratedAt` and
+ * invalidates the cached wind trail so the new offset shows on the next fetch.
+ *
+ * @param {object} preview  A successful computeRecalibration result.
+ * @returns {object} the new getCalibration()
+ */
+export function applyCalibration(preview) {
+  const offsetDeg = ((Number(preview.offsetDeg) % 360) + 360) % 360;
+  calibration = {
+    offsetDeg,
+    calibratedAt: new Date().toISOString(),
+    confidence: preview.confidence ?? null,
+    sampleCount: preview.sampleCount ?? null,
+    referenceMeanDir: preview.referenceMeanDir ?? null,
+    pwsMeanDirRaw: preview.pwsMeanDirRaw ?? null,
+    meanSpeedKt: preview.pwsMeanSpeedKt ?? null,
+  };
+  windCache.fetchedAt = 0; // force the corrected trail to rebuild
+  console.log(
+    `[wu] Wind direction recalibrated: offset ${offsetDeg.toFixed(1)}° `
+    + `(n=${calibration.sampleCount}, r=${(calibration.confidence ?? 0).toFixed(2)})`,
+  );
+  return getCalibration();
+}
+
+/** Clear the calibration back to uncalibrated (offset 0, direction hidden). */
+export function resetCalibration() {
+  calibration = {
+    offsetDeg: 0,
+    calibratedAt: null,
+    confidence: null,
+    sampleCount: null,
+    referenceMeanDir: null,
+    pwsMeanDirRaw: null,
+    meanSpeedKt: null,
+  };
+  windCache.fetchedAt = 0; // force the trail to rebuild without the offset
+  console.log('[wu] Wind direction calibration reset (offset 0)');
+  return getCalibration();
 }

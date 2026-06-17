@@ -2,6 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
 import {
   getTidePredictions,
   getTideCurve,
@@ -11,7 +12,13 @@ import {
 import { StationCache } from './src/cache.js';
 import { getForecast } from './src/nws.js';
 import { getCurrentConditions } from './src/conditions.js';
-import { getWuWind } from './src/wunderground.js';
+import {
+  getWuWind,
+  computeRecalibration,
+  getCalibration,
+  applyCalibration,
+  resetCalibration,
+} from './src/wunderground.js';
 import { getAstroEvents, getDaylight, nowLocal } from './src/astro.js';
 
 /** Pseudo-station id the frontend uses for the EYC Weather Underground PWS. */
@@ -49,9 +56,39 @@ stationCaches.set(STATION_PROVIDENCE, provCacher);
 // ── Express app ─────────────────────────────────────────────────────────────
 
 const app = express();
+app.use(express.json());
 
 /** Prefix a route path with the BASE_PATH. */
 const bp = (path) => `${BASE_PATH}${path}`;
+
+/**
+ * Gate a recalibration-mutating request on the shared secret in
+ * RECALIBRATE_SECRET (sent as the `X-Recalibrate-Secret` header or a `secret`
+ * body field). This is deliberately light security — the worst a bad actor can
+ * do is point the PWS wind arrow the wrong way until someone recalibrates — but
+ * it stops casual/accidental changes via the unlisted page.
+ *
+ * Returns true if the request may proceed; otherwise writes the error response
+ * and returns false.
+ */
+function checkRecalibrateSecret(req, res) {
+  const expected = process.env.RECALIBRATE_SECRET;
+  if (!expected) {
+    res.status(503).json({
+      error: 'Recalibration is not configured (RECALIBRATE_SECRET is unset).',
+    });
+    return false;
+  }
+  const provided = req.get('X-Recalibrate-Secret') ?? req.body?.secret ?? '';
+  const a = Buffer.from(String(provided));
+  const b = Buffer.from(expected);
+  const ok = a.length === b.length && timingSafeEqual(a, b);
+  if (!ok) {
+    res.status(401).json({ error: 'Invalid recalibration secret.' });
+    return false;
+  }
+  return true;
+}
 
 // Redirect /eyc-weather → /eyc-weather/ so relative URLs resolve correctly
 app.use(BASE_PATH, (req, _res, next) => {
@@ -70,6 +107,11 @@ app.use(bp('/'), express.static(join(__dirname, 'public'), {
 /** Serve index.html for the root path. */
 app.get(bp('/'), (_req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
+});
+
+/** Unlisted PWS wind-direction recalibration page. */
+app.get(bp('/recalibrate'), (_req, res) => {
+  res.sendFile(join(__dirname, 'public', 'recalibrate.html'));
 });
 
 // ── API routes ──────────────────────────────────────────────────────────────
@@ -199,6 +241,45 @@ app.get(bp('/api/forecast'), async (_req, res) => {
 /** App version from package.json. */
 app.get(bp('/api/version'), (_req, res) => {
   res.json({ version: VERSION });
+});
+
+// ── PWS wind-direction recalibration ────────────────────────────────────────
+
+/** Current calibration state (public — read-only, no secret needed). */
+app.get(bp('/api/calibration'), (_req, res) => {
+  res.json(getCalibration());
+});
+
+/**
+ * Preview a recalibration without applying it (public — read-only). Compares
+ * the PWS against NOAA Providence wind over the last hour and returns the
+ * proposed offset, confidence, and supporting figures for the operator.
+ */
+app.get(bp('/api/recalibrate/preview'), async (_req, res) => {
+  try {
+    const referenceObs = await provVisCacher.getData('wind');
+    const preview = await computeRecalibration(referenceObs);
+    res.json(preview);
+  } catch (err) {
+    console.error('[api] /api/recalibrate/preview error:', err);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+/** Apply a calibration (secret-gated). Body is a previewed result. */
+app.post(bp('/api/recalibrate'), (req, res) => {
+  if (!checkRecalibrateSecret(req, res)) return;
+  const offsetDeg = Number(req.body?.offsetDeg);
+  if (!Number.isFinite(offsetDeg)) {
+    return res.status(400).json({ error: 'offsetDeg must be a finite number.' });
+  }
+  res.json(applyCalibration(req.body));
+});
+
+/** Clear the calibration back to uncalibrated (secret-gated). */
+app.post(bp('/api/recalibrate/reset'), (req, res) => {
+  if (!checkRecalibrateSecret(req, res)) return;
+  res.json(resetCalibration());
 });
 
 // ── Start ───────────────────────────────────────────────────────────────────
