@@ -1373,10 +1373,14 @@ async function fetchWindData(station) {
     // such a sample is excluded from the compass but its speed still shows in
     // the legend.
     const dirNum = d.d == null ? null : parseFloat(d.d);
+    const speed = parseFloat(d.s) || 0;
+    const gustNum = parseFloat(d.g);
     return {
       time: new Date(d.time),
-      speed: parseFloat(d.s) || 0,
-      gust: parseFloat(d.g) || 0,
+      speed,
+      // Fall back to the speed (not 0) for a missing gust, matching the
+      // server: a 0 gust would draw the gust spoke inward past the speed point.
+      gust: Number.isFinite(gustNum) ? gustNum : speed,
       dir: Number.isFinite(dirNum) ? dirNum : null,
       dirLabel: d.dr || '',
       station,
