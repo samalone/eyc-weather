@@ -41,6 +41,13 @@ const WIND_WINDOW_MS = 60 * 60 * 1000;
 const MIN_CALIB_SPEED_KT = 5;
 
 /**
+ * Minimum matched sample pairs for a usable recalibration. Guards against a
+ * one- or two-sample fit, whose resultant-length confidence is trivially high
+ * yet meaningless.
+ */
+const MIN_CALIB_SAMPLES = 3;
+
+/**
  * How close in time a WU sample and a reference sample must be to be paired
  * for recalibration. Both sources report every few minutes, so a 7-minute
  * window reliably finds the nearest neighbour without matching across a gap.
@@ -120,6 +127,17 @@ function vectorMeanDeg(anglesDeg) {
 function mean(nums) {
   if (!nums.length) return 0;
   return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+/**
+ * Number(v), but null/undefined/'' → NaN. NOAA and WU report numeric fields as
+ * strings and can send an empty string for a missing reading; plain Number('')
+ * is 0, which would silently inject a bogus 0° direction or 0-kt speed. NaN
+ * lets the recalibration filters reject the sample instead of trusting a fake 0.
+ */
+function numOrNaN(v) {
+  if (v == null || v === '') return NaN;
+  return Number(v);
 }
 
 // ── Cache state ──────────────────────────────────────────────────────────
@@ -355,7 +373,7 @@ async function fetchWuRawWindRecords() {
         // Eastern wall-clock time (no offset) to match NOAA's lst_ldt format,
         // so both sources sort consistently regardless of the viewer's TZ.
         easternNaive: toEasternNaive(obs.obsTimeUtc),
-        dirRaw: obs.winddirAvg == null ? null : Number(obs.winddirAvg),
+        dirRaw: numOrNaN(obs.winddirAvg),
         speed: mphToKnots(imp.windspeedAvg) ?? 0,
         gust: mphToKnots(imp.windgustHigh ?? imp.windgustAvg),
       };
@@ -441,14 +459,15 @@ export async function computeRecalibration(referenceObs, pwsRecords) {
   const ref = (referenceObs ?? [])
     .map((o) => ({
       ms: easternNaiveToMs(o.time),
-      dir: o.d == null ? NaN : Number(o.d),
-      speed: o.s == null ? NaN : Number(o.s),
+      dir: numOrNaN(o.d),
+      speed: numOrNaN(o.s),
     }))
-    .filter((o) => !Number.isNaN(o.ms) && !Number.isNaN(o.dir));
+    .filter((o) => Number.isFinite(o.ms) && Number.isFinite(o.dir));
 
   const pairs = [];
   for (const w of wu) {
-    if (w.dirRaw == null || Number.isNaN(w.dirRaw)) continue;
+    if (!Number.isFinite(w.dirRaw)) continue;
+    if (!Number.isFinite(w.speed) || w.speed < MIN_CALIB_SPEED_KT) continue;
     const wms = easternNaiveToMs(w.easternNaive);
 
     // Nearest reference sample in time.
@@ -459,7 +478,9 @@ export async function computeRecalibration(referenceObs, pwsRecords) {
       if (dt < bestDt) { bestDt = dt; best = r; }
     }
     if (!best || bestDt > MATCH_TOLERANCE_MS) continue;
-    if (w.speed < MIN_CALIB_SPEED_KT || best.speed < MIN_CALIB_SPEED_KT) continue;
+    // Speed gate uses Number.isFinite so a missing/NaN speed can't slip through
+    // (NaN < MIN is false, which would otherwise admit the sample).
+    if (!Number.isFinite(best.speed) || best.speed < MIN_CALIB_SPEED_KT) continue;
 
     pairs.push({
       pwsDir: w.dirRaw, pwsSpeed: w.speed,
@@ -470,30 +491,29 @@ export async function computeRecalibration(referenceObs, pwsRecords) {
   const base = {
     windowMinutes: WIND_WINDOW_MS / 60000,
     minSpeedKt: MIN_CALIB_SPEED_KT,
+    minSamples: MIN_CALIB_SAMPLES,
     sampleCount: pairs.length,
     current: getCalibration(),
   };
 
-  if (pairs.length === 0) {
+  // Require a handful of samples: with a single pair the resultant length is
+  // trivially 1.0 ("100% confidence"), which would badly mislead the operator.
+  if (pairs.length < MIN_CALIB_SAMPLES) {
     return {
       ok: false,
-      reason: 'No matching PWS/reference samples above '
-        + `${MIN_CALIB_SPEED_KT} kt in the last ${base.windowMinutes} min. `
-        + 'Try again during a steadier, stronger breeze.',
+      reason: `Only ${pairs.length} PWS/reference sample(s) above `
+        + `${MIN_CALIB_SPEED_KT} kt in the last ${base.windowMinutes} min `
+        + `(need ${MIN_CALIB_SAMPLES}). Try again during a steadier, `
+        + 'stronger breeze.',
       ...base,
     };
   }
 
-  // Circular mean of the per-sample (reference − PWS) differences.
-  let sumSin = 0;
-  let sumCos = 0;
-  for (const p of pairs) {
-    const d = ((p.refDir - p.pwsDir) * Math.PI) / 180;
-    sumSin += Math.sin(d);
-    sumCos += Math.cos(d);
-  }
-  const offsetDeg = ((Math.atan2(sumSin, sumCos) * 180) / Math.PI + 360) % 360;
-  const confidence = Math.hypot(sumSin, sumCos) / pairs.length;
+  // Offset = circular mean of the per-sample (reference − PWS) differences;
+  // its resultant length r is the confidence (1 = the offset is dead constant).
+  const fit = vectorMeanDeg(pairs.map((p) => p.refDir - p.pwsDir));
+  const offsetDeg = fit.dir;
+  const confidence = fit.r;
 
   const refMean = vectorMeanDeg(pairs.map((p) => p.refDir));
   const pwsMean = vectorMeanDeg(pairs.map((p) => p.pwsDir));
@@ -533,11 +553,20 @@ export function getCalibration() {
  * Apply a calibration from a (validated) preview. Stamps `calibratedAt` and
  * invalidates the cached wind trail so the new offset shows on the next fetch.
  *
+ * The confidence/sampleCount/mean fields are stored as operator-reviewed
+ * provenance from the preview — they are not re-derived here, so they describe
+ * the data the operator saw, not a fresh sample.
+ *
  * @param {object} preview  A successful computeRecalibration result.
  * @returns {object} the new getCalibration()
+ * @throws if preview.offsetDeg is not a finite number.
  */
 export function applyCalibration(preview) {
-  const offsetDeg = ((Number(preview.offsetDeg) % 360) + 360) % 360;
+  const raw = Number(preview?.offsetDeg);
+  if (!Number.isFinite(raw)) {
+    throw new Error('applyCalibration: offsetDeg must be a finite number');
+  }
+  const offsetDeg = ((raw % 360) + 360) % 360;
   calibration = {
     offsetDeg,
     calibratedAt: new Date().toISOString(),

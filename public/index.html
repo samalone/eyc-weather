@@ -1673,16 +1673,19 @@ function isDirectionHidden(station) {
 
 async function refreshWind() {
   try {
-    // Pick up any recalibration applied via the /recalibrate page (in-memory
-    // on the server, so this reflects the current pod's state).
-    try {
-      const r = await fetch('api/calibration');
-      if (r.ok) wuDirCalibrated = !!(await r.json()).active;
-    } catch (e) {
-      console.warn('[wind] calibration state fetch failed:', e);
-    }
+    // Fetch the wind trail and the calibration state in parallel — the
+    // calibration (applied via the /recalibrate page, in-memory on the server)
+    // only gates whether the PWS direction is shown, so it must not block the
+    // data fetch. Both have their own error handling, so Promise.all is safe.
+    const [calState, obs] = await Promise.all([
+      fetch('api/calibration')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch((e) => { console.warn('[wind] calibration state fetch failed:', e); return null; }),
+      fetchAllWind(),
+    ]);
+    if (calState) wuDirCalibrated = !!calState.active;
 
-    windObservations = await fetchAllWind();
+    windObservations = obs;
     if (windObservations.length === 0) {
       console.warn('[wind] No observations after merge — compass will be empty');
     }
