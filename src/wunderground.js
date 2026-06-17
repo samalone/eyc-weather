@@ -89,7 +89,9 @@ let calibration = {
 
 /** Apply the current calibration offset, wrapping into [0, 360). Null-safe. */
 function correctWindDir(deg) {
-  if (deg == null) return null;
+  // Treat '' like null: Number('') is 0, which would masquerade as a real
+  // due-north reading (NOAA/WU send numeric fields as possibly-empty strings).
+  if (deg == null || deg === '') return null;
   const num = Number(deg);
   if (Number.isNaN(num)) return null;
   return ((num + calibration.offsetDeg) % 360 + 360) % 360;
@@ -151,6 +153,19 @@ let cache = {
 
 /** Separate cache for the wind trail (different endpoint, larger payload). */
 let windCache = {
+  /** @type {object[]} */
+  data: [],
+  /** @type {number} Date.now() when last fetched */
+  fetchedAt: 0,
+};
+
+/**
+ * Cache for the RAW WU history records. Both the corrected wind trail and the
+ * recalibration preview read from here, so the WU history endpoint is hit at
+ * most once per TTL no matter how often the (public) preview is requested —
+ * preventing preview traffic from burning the WU rate/daily quota.
+ */
+let rawWindCache = {
   /** @type {object[]} */
   data: [],
   /** @type {number} Date.now() when last fetched */
@@ -381,25 +396,55 @@ async function fetchWuRawWindRecords() {
 }
 
 /**
+ * Return the raw WU history records, cached for CACHE_TTL_MS. Shared by the
+ * corrected wind trail and the recalibration preview so the upstream WU
+ * history endpoint is hit at most once per TTL. Errors are negative-cached
+ * (returns []), matching getWuWind — callers fall back gracefully.
+ */
+async function getWuRawWindRecords() {
+  const now = Date.now();
+  if (rawWindCache.fetchedAt && (now - rawWindCache.fetchedAt) < CACHE_TTL_MS) {
+    return rawWindCache.data;
+  }
+  let data = [];
+  try {
+    data = await fetchWuRawWindRecords();
+  } catch (err) {
+    console.error('[wu] raw wind fetch failed:', err.message);
+  }
+  rawWindCache = { data, fetchedAt: now };
+  return data;
+}
+
+/**
  * Fetch the last hour of rapid wind observations and normalize them into the
  * same shape the wind compass consumes for NOAA stations
  * ({ time, s, g, d, dr }, speeds in knots), applying the calibration offset.
+ *
+ * Records with no usable direction are dropped rather than coerced to 0°:
+ * once a calibration is active the PWS is plotted on the compass, where a
+ * fake due-north segment would corrupt the trail. Their speed is lost from the
+ * trail, but the compass is a direction plot and missing-direction WU samples
+ * are rare.
  */
 async function fetchWindHistory() {
-  const raw = await fetchWuRawWindRecords();
-  return raw.map((r) => {
+  const raw = await getWuRawWindRecords();
+  const out = [];
+  for (const r of raw) {
     const dir = correctWindDir(r.dirRaw);
+    if (dir == null) continue;
     const speed = r.speed ?? 0;
-    return {
+    out.push({
       time: r.easternNaive,
       s: speed,
       // Fall back to the speed (zero-length gust) rather than 0, which would
       // draw the gust spoke pointing inward past the speed point.
       g: r.gust ?? speed,
-      d: dir ?? 0,
+      d: dir,
       dr: compassLabel(dir),
-    };
-  });
+    });
+  }
+  return out;
 }
 
 /**
@@ -454,7 +499,20 @@ export async function getWuWind() {
  *   windowMinutes, minSpeedKt, current }`, or `{ ok: false, reason, ... }`.
  */
 export async function computeRecalibration(referenceObs, pwsRecords) {
-  const wu = pwsRecords ?? await fetchWuRawWindRecords();
+  const wu = pwsRecords ?? await getWuRawWindRecords();
+
+  if (wu.length === 0) {
+    return {
+      ok: false,
+      reason: 'No PWS wind observations available — the station may be '
+        + 'offline or the API key missing.',
+      windowMinutes: WIND_WINDOW_MS / 60000,
+      minSpeedKt: MIN_CALIB_SPEED_KT,
+      minSamples: MIN_CALIB_SAMPLES,
+      sampleCount: 0,
+      current: getCalibration(),
+    };
+  }
 
   const ref = (referenceObs ?? [])
     .map((o) => ({

@@ -2,7 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, createHash } from 'node:crypto';
 import {
   getTidePredictions,
   getTideCurve,
@@ -79,10 +79,13 @@ function checkRecalibrateSecret(req, res) {
     });
     return false;
   }
+  // Hash both sides to a fixed 32-byte digest before comparing: this avoids a
+  // length pre-check (which would leak the secret's length via timing) while
+  // still giving timingSafeEqual two equal-length buffers.
   const provided = req.get('X-Recalibrate-Secret') ?? req.body?.secret ?? '';
-  const a = Buffer.from(String(provided));
-  const b = Buffer.from(expected);
-  const ok = a.length === b.length && timingSafeEqual(a, b);
+  const a = createHash('sha256').update(String(provided)).digest();
+  const b = createHash('sha256').update(String(expected)).digest();
+  const ok = timingSafeEqual(a, b);
   if (!ok) {
     res.status(401).json({ error: 'Invalid recalibration secret.' });
     return false;
