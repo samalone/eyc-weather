@@ -106,9 +106,13 @@ function correctWindDir(deg) {
  * cancels when we only ever take *differences* between two such values (as the
  * recalibration pairing does). This keeps matching deterministic regardless of
  * the server's timezone, with no DST handling needed inside a 1-hour window.
+ *
+ * Normalize any space separator to 'T' so the string is strict ISO 8601 —
+ * Date.parse of a space-separated datetime is implementation-defined.
  */
 function easternNaiveToMs(naive) {
-  return Date.parse(`${naive}Z`);
+  if (!naive) return NaN;
+  return Date.parse(`${String(naive).replace(' ', 'T')}Z`);
 }
 
 /** Vector (circular) mean of a list of directions in degrees. */
@@ -421,30 +425,26 @@ async function getWuRawWindRecords() {
  * same shape the wind compass consumes for NOAA stations
  * ({ time, s, g, d, dr }, speeds in knots), applying the calibration offset.
  *
- * Records with no usable direction are dropped rather than coerced to 0°:
- * once a calibration is active the PWS is plotted on the compass, where a
- * fake due-north segment would corrupt the trail. Their speed is lost from the
- * trail, but the compass is a direction plot and missing-direction WU samples
- * are rare.
+ * A record with no usable direction keeps its (trustworthy) speed but carries
+ * `d: null` so the frontend can still show the PWS speed in the legend while
+ * suppressing the compass segment — coercing to 0° would draw a fake due-north
+ * spoke now that a calibrated PWS is plotted.
  */
 async function fetchWindHistory() {
   const raw = await getWuRawWindRecords();
-  const out = [];
-  for (const r of raw) {
+  return raw.map((r) => {
     const dir = correctWindDir(r.dirRaw);
-    if (dir == null) continue;
     const speed = r.speed ?? 0;
-    out.push({
+    return {
       time: r.easternNaive,
       s: speed,
       // Fall back to the speed (zero-length gust) rather than 0, which would
       // draw the gust spoke pointing inward past the speed point.
       g: r.gust ?? speed,
-      d: dir,
+      d: dir,            // null when direction is unavailable (not plotted)
       dr: compassLabel(dir),
-    });
-  }
-  return out;
+    };
+  });
 }
 
 /**
@@ -634,7 +634,11 @@ export function applyCalibration(preview) {
     pwsMeanDirRaw: preview.pwsMeanDirRaw ?? null,
     meanSpeedKt: preview.pwsMeanSpeedKt ?? null,
   };
-  windCache.fetchedAt = 0; // force the corrected trail to rebuild
+  // Invalidate both WU caches so the new offset shows immediately rather than
+  // after the 5-min TTL: the trail (windCache) and the current observation
+  // (cache), whose windDirection was computed with the previous offset.
+  windCache.fetchedAt = 0;
+  cache.fetchedAt = 0;
   console.log(
     `[wu] Wind direction recalibrated: offset ${offsetDeg.toFixed(1)}° `
     + `(n=${calibration.sampleCount}, r=${(calibration.confidence ?? 0).toFixed(2)})`,
@@ -653,7 +657,10 @@ export function resetCalibration() {
     pwsMeanDirRaw: null,
     meanSpeedKt: null,
   };
-  windCache.fetchedAt = 0; // force the trail to rebuild without the offset
+  // Invalidate both WU caches (trail + current observation) so the dashboard
+  // reverts to the uncalibrated direction immediately, not after the TTL.
+  windCache.fetchedAt = 0;
+  cache.fetchedAt = 0;
   console.log('[wu] Wind direction calibration reset (offset 0)');
   return getCalibration();
 }
