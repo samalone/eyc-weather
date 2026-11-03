@@ -44,9 +44,11 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 30
           resources:
+            # Uses under 1m CPU and ~45Mi (2026-11-03); requests are what the
+            # shared 1-CPU node reserves, so keep them near real use.
             requests:
               memory: "64Mi"
-              cpu: "50m"
+              cpu: "10m"
             limits:
               memory: "256Mi"
               cpu: "250m"
